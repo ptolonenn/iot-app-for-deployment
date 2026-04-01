@@ -1,0 +1,2260 @@
+[
+    {
+        "id": "badef27c232a01ee",
+        "type": "tab",
+        "label": "ProtoFlow",
+        "disabled": false,
+        "info": "",
+        "env": []
+    },
+    {
+        "id": "a8bab09a4e76bc62",
+        "type": "group",
+        "z": "badef27c232a01ee",
+        "style": {
+            "stroke": "#999999",
+            "stroke-opacity": "1",
+            "fill": "none",
+            "fill-opacity": "1",
+            "label": true,
+            "label-position": "nw",
+            "color": "#a4a4a4"
+        },
+        "nodes": [
+            "led_toggle_inject",
+            "led_off_inject",
+            "led_command_formatter",
+            "led_command_debug",
+            "rgb_red_inject",
+            "rgb_green_inject",
+            "rgb_blue_inject",
+            "rgb_white_inject",
+            "rgb_off_inject",
+            "rgb_command_formatter",
+            "rgb_command_debug",
+            "13e213ec22409f44",
+            "3d8960a2c9d5601b",
+            "vibrator_on_inject",
+            "vibrator_off_inject",
+            "vibrator_command_formatter",
+            "vibrator_command_debug",
+            "vibrator_link_out",
+            "display_number_inject",
+            "display_time_inject",
+            "display_text_inject",
+            "display_clear_inject",
+            "display_command_formatter",
+            "display_command_debug",
+            "display_link_out",
+            "ledbar_level5_inject",
+            "ledbar_level10_inject",
+            "ledbar_allon_inject",
+            "ledbar_alloff_inject",
+            "ledbar_command_formatter",
+            "ledbar_command_debug",
+            "ledbar_link_out",
+            "rgbstick_red_inject",
+            "rgbstick_green_inject",
+            "rgbstick_rainbow_inject",
+            "rgbstick_off_inject",
+            "rgbstick_command_formatter",
+            "rgbstick_command_debug",
+            "rgbstick_link_out"
+        ],
+        "x": 34,
+        "y": 2139,
+        "w": 902,
+        "h": 1092
+    },
+    {
+        "id": "device_websocket_in",
+        "type": "websocket in",
+        "z": "badef27c232a01ee",
+        "name": "Device WebSocket In",
+        "server": "device_websocket_listener",
+        "client": "",
+        "x": 160,
+        "y": 340,
+        "wires": [
+            [
+                "device_message_parser",
+                "f393a32c5cc87b61"
+            ]
+        ]
+    },
+    {
+        "id": "device_message_parser",
+        "type": "function",
+        "z": "badef27c232a01ee",
+        "name": "Device Message Parser",
+        "func": "// OPTIMIZED: Parse incoming device messages with ultra-minimal heartbeat + ultra-compact sensor support\n// Supports: heartbeat ('h'), compact sensors (S57.41, I1.2,3.4,5.6), JSON\n\nconst payload = msg.payload;\nmsg.sessionId = msg._session;\n\n// FAST PATH 1: Ultra-minimal heartbeat (single character 'h')\nif (payload === 'h') {\n    msg.messageType = 'heartbeat';\n    msg.parsedMessage = null;\n    msg.deviceUUID = null;\n    return msg;\n}\n\n// FAST PATH 2: Ultra-compact sensor data (starts with uppercase letter)\n// Formats: S57.41, B1, I0.12,-0.05,9.81,...\nif (payload.length >= 2 && payload[0] >= 'A' && payload[0] <= 'Z' && payload[1] !== '{') {\n    const code = payload[0];\n    const valueStr = payload.substring(1);\n\n    // Parse based on sensor code\n    msg.messageType = 'sensor_data_compact';\n    msg.sensorCode = code;\n    msg.sensorValueStr = valueStr;\n    msg.deviceUUID = null;  // Will be resolved by session lookup\n    return msg;\n}\n\n// Standard path: JSON messages\nlet message;\ntry {\n    message = JSON.parse(payload);\n    msg.parsedMessage = message;\n\n    // Determine message type\n    if (message.type === 'device_registration') {\n        msg.messageType = 'device_registration';\n        msg.deviceUUID = message.device;\n    } else if (message.s) {\n        // Simplified sensor data format: {\"s\": \"sensor\", \"v\": value}\n        msg.messageType = 'sensor_data';\n        msg.deviceUUID = null; // Will be resolved by session lookup\n    } else {\n        msg.messageType = 'unknown';\n        msg.deviceUUID = message.device || 'unknown';\n    }\n\n    return msg;\n\n} catch (e) {\n    node.error('Failed to parse device message: ' + e.message, msg);\n    return null;\n}",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 460,
+        "y": 340,
+        "wires": [
+            [
+                "device_message_router"
+            ]
+        ]
+    },
+    {
+        "id": "device_message_router",
+        "type": "switch",
+        "z": "badef27c232a01ee",
+        "name": "Device Message Router",
+        "property": "messageType",
+        "propertyType": "msg",
+        "rules": [
+            {
+                "t": "eq",
+                "v": "device_registration",
+                "vt": "str"
+            },
+            {
+                "t": "eq",
+                "v": "heartbeat",
+                "vt": "str"
+            },
+            {
+                "t": "eq",
+                "v": "sensor_data_compact",
+                "vt": "str"
+            },
+            {
+                "t": "eq",
+                "v": "sensor_data",
+                "vt": "str"
+            },
+            {
+                "t": "else"
+            }
+        ],
+        "checkall": "true",
+        "repair": false,
+        "outputs": 5,
+        "x": 760,
+        "y": 340,
+        "wires": [
+            [
+                "device_registration_handler"
+            ],
+            [
+                "heartbeat_handler"
+            ],
+            [
+                "compact_sensor_data_handler"
+            ],
+            [
+                "sensor_data_handler"
+            ],
+            []
+        ]
+    },
+    {
+        "id": "device_registration_handler",
+        "type": "function",
+        "z": "badef27c232a01ee",
+        "name": "Device Registration Handler",
+        "func": "// OPTIMIZED: Handle device registration with fast-path for known devices\n// Known devices only update socketID, new devices get full registration\n// ENHANCED: Build actuator AND sensor code mapping for ultra-compact commands\n// ENHANCED: Added verification logging to diagnose storage issues\n\nconst regMsg = msg.parsedMessage;\nconst deviceUUID = msg.deviceUUID;\nconst sessionId = msg.sessionId;\n\nnode.log(`\\n=== REGISTRATION STARTED ===`);\nnode.log(`Device UUID: ${deviceUUID}`);\nnode.log(`Device name: ${regMsg.device_name}`);\nnode.log(`Session ID: ${JSON.stringify(sessionId)}`);\n\n// Validate registration message\nif (!deviceUUID || !regMsg.device_name) {\n    node.error('Invalid registration message: missing device UUID or name', msg);\n    return null;\n}\n\n// Actuator type to code mapping (standardized codes)\nconst actuatorTypeToCode = {\n    'led': 'L',\n    'pwm_led': 'P',\n    'servo': 'S',\n    'dc_motor': 'M',\n    'rgb_led': 'R',\n    'buzzer': 'B',\n    'relay': 'E',  // E for rElay (L taken by led)\n    'stepper': 'T',  // T for sTep\n    'fan': 'F',\n    'valve': 'V',\n    'heater': 'H',\n    'tone_buzzer': 'Z',  // Z for buzZer tone\n    'pwm': 'W',  // W for pWm\n    'dac': 'D',\n    'mp3_player': 'X'  // X for MP3 (complex JSON)\n};\n\n// Sensor type to code mapping (standardized codes)\nconst sensorTypeToCode = {\n    'analog': 'A',\n    'slider': 'S',\n    'potentiometer': 'S',\n    'temperature': 'T',\n    'humidity': 'H',\n    'light': 'L',\n    'lux': 'L',\n    'pressure': 'P',\n    'distance': 'D',\n    'ultrasonic': 'D',\n    'button': 'B',\n    'digital': 'B',\n    'motion': 'M',\n    'pir': 'M',\n    'imu': 'I',\n    'imu_6dof': 'I',\n    'imu_9dof': 'I',\n    'imu_10dof': 'I',\n    'quaternion': 'Q',\n    'sound': 'N',  // N for Noise\n    'gas': 'G',\n    'voltage': 'V',\n    'current': 'C',\n    'mp3_status': 'X'  // X for MP3 status (complex JSON)\n};\n\n// Get devices from flow context\nconst devices = flow.get('devices') || {};\nconst existingDevice = devices[deviceUUID];\n\nif (existingDevice) {\n    // FAST PATH: Known device reconnecting - update socket AND peripherals\n    // IMPORTANT: Always refresh peripheral config to support prototyping workflows\n    // where sensors/actuators may be changed between connections\n    node.log(`✅ Known device reconnecting: ${regMsg.device_name} (${deviceUUID.substring(0,8)}...)`);\n\n    const sensorCount = (regMsg.sensors || []).length;\n    const actuatorCount = (regMsg.actuators || []).length;\n    node.log(`   Refreshing config: ${sensorCount} sensors, ${actuatorCount} actuators`);\n\n    // Build actuator code map for this device\n    const actuatorCodeMap = {};\n    (regMsg.actuators || []).forEach(actuator => {\n        const code = actuatorTypeToCode[actuator.type];\n        if (code) {\n            actuatorCodeMap[actuator.name] = {\n                code: code,\n                type: actuator.type,\n                dataType: actuator.data_type\n            };\n            node.log(`   Actuator: ${actuator.name} → ${code} (${actuator.type})`);\n        }\n    });\n\n    // Build sensor code map for this device\n    const sensorCodeMap = {};\n    (regMsg.sensors || []).forEach(sensor => {\n        const code = sensorTypeToCode[sensor.type];\n        if (code) {\n            sensorCodeMap[sensor.name] = {\n                code: code,\n                type: sensor.type,\n                dataType: sensor.data_type\n            };\n            node.log(`   Sensor: ${sensor.name} → ${code} (${sensor.type})`);\n        }\n    });\n\n    // Update ALL device properties including peripherals\n    existingDevice.sessionId = sessionId;\n    existingDevice.deviceName = regMsg.device_name;\n    existingDevice.deviceType = regMsg.device_type || 'ESP32';\n    existingDevice.library = regMsg.library;\n    existingDevice.version = regMsg.version;\n    existingDevice.ip = regMsg.ip;\n    existingDevice.sensors = regMsg.sensors || [];\n    existingDevice.actuators = regMsg.actuators || [];\n    existingDevice.actuatorCodeMap = actuatorCodeMap;\n    existingDevice.sensorCodeMap = sensorCodeMap;\n    existingDevice.status = 'acknowledged';\n    existingDevice.lastHeartbeat = Date.now();\n    existingDevice.lastSeen = new Date().toISOString();\n\n    // Save updated device\n    flow.set('devices', devices);\n\n    node.status({\n        fill: 'green',\n        shape: 'ring',\n        text: `Reconnected: ${regMsg.device_name}`\n    });\n} else {\n    // NEW DEVICE: Full registration process\n    node.log(`🆕 New device registering: ${regMsg.device_name} (${deviceUUID.substring(0,8)}...)`);\n\n    const sensorCount = (regMsg.sensors || []).length;\n    const actuatorCount = (regMsg.actuators || []).length;\n    node.log(`   ${sensorCount} sensors, ${actuatorCount} actuators`);\n\n    // Build actuator code map for this device\n    const actuatorCodeMap = {};\n    (regMsg.actuators || []).forEach(actuator => {\n        const code = actuatorTypeToCode[actuator.type];\n        if (code) {\n            actuatorCodeMap[actuator.name] = {\n                code: code,\n                type: actuator.type,\n                dataType: actuator.data_type\n            };\n            node.log(`   Actuator: ${actuator.name} → ${code} (${actuator.type})`);\n        }\n    });\n\n    // Build sensor code map for this device\n    const sensorCodeMap = {};\n    (regMsg.sensors || []).forEach(sensor => {\n        const code = sensorTypeToCode[sensor.type];\n        if (code) {\n            sensorCodeMap[sensor.name] = {\n                code: code,\n                type: sensor.type,\n                dataType: sensor.data_type\n            };\n            node.log(`   Sensor: ${sensor.name} → ${code} (${sensor.type})`);\n        }\n    });\n\n    devices[deviceUUID] = {\n        sessionId: sessionId,\n        deviceName: regMsg.device_name,\n        deviceType: regMsg.device_type || 'ESP32',\n        library: regMsg.library,\n        version: regMsg.version,\n        ip: regMsg.ip,\n        sensors: regMsg.sensors || [],\n        actuators: regMsg.actuators || [],\n        actuatorCodeMap: actuatorCodeMap,  // Store actuator code mapping\n        sensorCodeMap: sensorCodeMap,  // Store sensor code mapping\n        status: 'acknowledged',\n        lastHeartbeat: Date.now(),\n        registrationTime: new Date().toISOString(),\n        lastSeen: new Date().toISOString()\n    };\n\n    flow.set('devices', devices);\n\n    node.status({\n        fill: 'green',\n        shape: 'dot',\n        text: `New: ${regMsg.device_name}`\n    });\n}\n\n// VERIFICATION: Check device was stored correctly\nconst storedDevices = flow.get('devices') || {};\nconst verifyDevice = storedDevices[deviceUUID];\nnode.log(`\\n=== STORAGE VERIFICATION ===`);\nnode.log(`Total devices in flow context: ${Object.keys(storedDevices).length}`);\nif (verifyDevice) {\n    node.log(`✅ Device ${deviceUUID.substring(0,8)} VERIFIED in storage`);\n    node.log(`   Name: ${verifyDevice.deviceName}`);\n    node.log(`   Session: ${JSON.stringify(verifyDevice.sessionId)}`);\n    node.log(`   SensorCodeMap keys: ${Object.keys(verifyDevice.sensorCodeMap || {}).join(', ') || 'none'}`);\n} else {\n    node.error(`❌ CRITICAL: Device ${deviceUUID.substring(0,8)} NOT FOUND in storage after flow.set()!`);\n    node.error(`   This indicates a flow context storage failure`);\n}\n\n// Generate registration acknowledgment (same for both paths)\nconst ackResponse = {\n    type: 'registration_ack',\n    device: deviceUUID,\n    status: 'accepted',\n    message: existingDevice ? 'Device reconnected' : 'Device registered successfully',\n    timestamp: Date.now()\n};\n\n// Prepare response message\nmsg.payload = JSON.stringify(ackResponse);\nmsg._session = sessionId;\nmsg.ackResponse = ackResponse;\n\nnode.log(`=== REGISTRATION COMPLETE - Sending ACK ===\\n`);\n\n// Build webhook message to forward registration to backend\nconst webhookMsg = {\n    payload: {\n        uuid: deviceUUID,\n        name: regMsg.device_name,\n        type: regMsg.device_type || 'ESP32',\n        sensors: regMsg.sensors || [],\n        actuators: regMsg.actuators || []\n    },\n    headers: { 'Content-Type': 'application/json' }\n};\n\nreturn [msg, webhookMsg];",
+        "outputs": 2,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1100,
+        "y": 280,
+        "wires": [
+            [
+                "device_websocket_out"
+            ],
+            [
+                "b3d1a07b4792c087"
+            ]
+        ]
+    },
+    {
+        "id": "heartbeat_handler",
+        "type": "function",
+        "z": "badef27c232a01ee",
+        "name": "Heartbeat Handler",
+        "func": "// OPTIMIZED: Ultra-minimal heartbeat handler using session-based device lookup\n// Heartbeat is now just 'h' - device identified by WebSocket session\n\nconst sessionId = msg.sessionId;\nconst devices = flow.get('devices') || {};\n\n// Lookup device by session ID (similar to sensor data handler)\nlet deviceUUID = null;\nlet device = null;\n\nfor (const uuid in devices) {\n    const candidate = devices[uuid];\n    if (candidate.sessionId) {\n        const storedSession = candidate.sessionId;\n        \n        // STRICT: Only JSON comparison - no loose String() matching\n        if (JSON.stringify(storedSession) === JSON.stringify(sessionId)) {\n            deviceUUID = uuid;\n            device = candidate;\n            break;\n        }\n    }\n}\n\n// Device not found - request re-registration\nif (!device) {\n    node.warn(`[HEARTBEAT] ❌ Unknown session - requesting re-registration`);\n    \n    const reRegRequest = {\n        type: 're_register_request',\n        message: 'Session not found after server restart, please re-register',\n        timestamp: Date.now(),\n        reason: 'heartbeat_session_not_found'\n    };\n    \n    msg.payload = JSON.stringify(reRegRequest);\n    msg._session = sessionId;\n    return msg;\n}\n\n// SUCCESS: Update heartbeat timestamp (minimal overhead)\ndevice.lastHeartbeat = Date.now();\ndevice.status = 'acknowledged';\nflow.set('devices', devices);\n\n// No output for successful heartbeat (silent operation)\nreturn null;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1070,
+        "y": 340,
+        "wires": [
+            [
+                "device_websocket_out"
+            ]
+        ]
+    },
+    {
+        "id": "sensor_data_handler",
+        "type": "function",
+        "z": "badef27c232a01ee",
+        "name": "Sensor Data Handler",
+        "func": "// Handle simplified sensor data and lookup device by session\n// FIXED: Strict session matching to prevent cross-device data leakage\n\nconst sensorMsg = msg.parsedMessage;\nconst sessionId = msg.sessionId;\n\n// Get devices from flow context\nconst devices = flow.get('devices') || {};\nlet deviceUUID = null;\nlet device = null;\n\n// Create a unique session key for comparison\n// This handles both object and string session IDs\nconst getSessionKey = (session) => {\n    if (!session) return null;\n    if (typeof session === 'string') return session;\n    if (session.id) return session.id;\n    // For objects, use JSON but ensure consistent key ordering\n    return JSON.stringify(session);\n};\n\nconst incomingKey = getSessionKey(sessionId);\n\n// DEBUG: Log incoming session\nnode.log(`[SENSOR] Incoming session key: ${incomingKey}`);\nnode.log(`[SENSOR] Checking ${Object.keys(devices).length} registered devices`);\n\n// STRICT session matching - only JSON comparison, no loose String() matching\nfor (const uuid in devices) {\n    const candidateDevice = devices[uuid];\n    if (candidateDevice.sessionId) {\n        const storedKey = getSessionKey(candidateDevice.sessionId);\n        \n        node.log(`[SENSOR] Device ${candidateDevice.deviceName} (${uuid.substring(0,8)}): stored key = ${storedKey}`);\n        \n        if (incomingKey && storedKey && incomingKey === storedKey) {\n            deviceUUID = uuid;\n            device = candidateDevice;\n            node.log(`[SENSOR] ✓ MATCHED: ${device.deviceName} → UUID ${uuid}`);\n            break;\n        } else {\n            node.log(`[SENSOR] ✗ No match`);\n        }\n    }\n}\n\n// Handle unknown session\nif (!deviceUUID || !device) {\n    node.warn(`[SENSOR] ❌ Unknown session - requesting re-registration`);\n    \n    node.status({fill: 'yellow', shape: 'ring', text: 'Unknown session'});\n    \n    const reRegRequest = {\n        type: 're_register_request',\n        message: 'Session not found, please re-register',\n        timestamp: Date.now(),\n        reason: 'session_lookup_failed'\n    };\n    \n    msg.payload = JSON.stringify(reRegRequest);\n    msg._session = sessionId;\n    msg.isReRegRequest = true;\n    \n    return msg;\n}\n\n// SUCCESS: Device found\nnode.log(`[SENSOR] ✅ ${device.deviceName} (${deviceUUID.substring(0,8)}): ${sensorMsg.s} = ${sensorMsg.v}`);\n\ndevice.lastSeen = new Date().toISOString();\ndevice.lastHeartbeat = Date.now();\nflow.set('devices', devices);\n\nconst sensorData = {\n    d: deviceUUID.substring(0, 8),\n    s: sensorMsg.s,\n    v: sensorMsg.v,\n    t: Date.now()\n};\n\nnode.status({\n    fill: 'blue',\n    shape: 'dot',\n    text: `${device.deviceName}: ${sensorMsg.s} = ${sensorMsg.v}`\n});\n\nmsg.payload = sensorData;\nmsg.isPWABroadcast = true;\nmsg.deviceUUID = deviceUUID;\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1080,
+        "y": 460,
+        "wires": [
+            [
+                "sensor_data_router"
+            ]
+        ]
+    },
+    {
+        "id": "sensor_data_router",
+        "type": "switch",
+        "z": "badef27c232a01ee",
+        "name": "Sensor Data Router",
+        "property": "isReRegRequest",
+        "propertyType": "msg",
+        "rules": [
+            {
+                "t": "true"
+            },
+            {
+                "t": "else"
+            }
+        ],
+        "checkall": "true",
+        "repair": false,
+        "outputs": 2,
+        "x": 1410,
+        "y": 420,
+        "wires": [
+            [
+                "device_websocket_out"
+            ],
+            [
+                "sensor_data_debug",
+                "sensor_data_broadcaster",
+                "webhook_prep"
+            ]
+        ]
+    },
+    {
+        "id": "device_websocket_out",
+        "type": "websocket out",
+        "z": "badef27c232a01ee",
+        "name": "Device WebSocket Out",
+        "server": "device_websocket_listener",
+        "client": "",
+        "x": 1750,
+        "y": 300,
+        "wires": []
+    },
+    {
+        "id": "f393a32c5cc87b61",
+        "type": "debug",
+        "z": "badef27c232a01ee",
+        "name": "Device RAW",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 410,
+        "y": 280,
+        "wires": []
+    },
+    {
+        "id": "sensor_data_debug",
+        "type": "debug",
+        "z": "badef27c232a01ee",
+        "name": "Sensor Data Ready",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 1670,
+        "y": 580,
+        "wires": []
+    },
+    {
+        "id": "flow_context_debug",
+        "type": "inject",
+        "z": "badef27c232a01ee",
+        "name": "Inspect Flow Context",
+        "props": [
+            {
+                "p": "payload"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 160,
+        "y": 540,
+        "wires": [
+            [
+                "context_inspector"
+            ]
+        ]
+    },
+    {
+        "id": "context_inspector",
+        "type": "function",
+        "z": "badef27c232a01ee",
+        "name": "Context Inspector",
+        "func": "// Inspect flow context for debugging\nconst devices = flow.get('devices') || {};\nconst deviceCount = Object.keys(devices).length;\n\nnode.log(`=== FLOW CONTEXT INSPECTION ===`);\nnode.log(`Device count: ${deviceCount}`);\n\nfor (const uuid in devices) {\n    const device = devices[uuid];\n    node.log(`Device: ${device.deviceName || 'unnamed'} (${uuid.substring(0,8)}...)`);\n    node.log(`  Session: ${JSON.stringify(device.sessionId)}`);\n    node.log(`  Status: ${device.status}`);\n    node.log(`  Last seen: ${device.lastSeen}`);\n    node.log(`  Sensors: ${(device.sensors || []).length}`);\n    node.log(`  Actuators: ${(device.actuators || []).length}`);\n}\n\nnode.status({\n    fill: deviceCount > 0 ? 'green' : 'red',\n    shape: 'dot',\n    text: `${deviceCount} devices in context`\n});\n\nmsg.payload = {\n    deviceCount,\n    devices: Object.keys(devices).map(uuid => ({\n        uuid: uuid.substring(0,8),\n        name: devices[uuid].deviceName,\n        status: devices[uuid].status,\n        sessionId: devices[uuid].sessionId,\n        lastSeen: devices[uuid].lastSeen\n    }))\n};\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 460,
+        "y": 540,
+        "wires": [
+            [
+                "context_debug_output"
+            ]
+        ]
+    },
+    {
+        "id": "context_debug_output",
+        "type": "debug",
+        "z": "badef27c232a01ee",
+        "name": "Flow Context",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 710,
+        "y": 540,
+        "wires": []
+    },
+    {
+        "id": "startup_init",
+        "type": "inject",
+        "z": "badef27c232a01ee",
+        "name": "NodeRED Startup",
+        "props": [
+            {
+                "p": "payload"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": true,
+        "onceDelay": 2,
+        "topic": "",
+        "payload": "startup",
+        "payloadType": "str",
+        "x": 160,
+        "y": 640,
+        "wires": [
+            [
+                "startup_handler"
+            ]
+        ]
+    },
+    {
+        "id": "startup_handler",
+        "type": "function",
+        "z": "badef27c232a01ee",
+        "name": "Startup Handler",
+        "func": "// Handle NodeRED startup - prepare for device reconnections\n// CRITICAL: After restart, flow context is empty but devices may still be connected\n\nnode.log(`=== NODERED STARTUP HANDLER ===`);\nnode.log(`Initializing flow context and preparing for device reconnections`);\n\n// Initialize empty devices context if not exists\nconst devices = flow.get('devices') || {};\nconst deviceCount = Object.keys(devices).length;\n\nnode.log(`Current devices in context: ${deviceCount}`);\n\nif (deviceCount === 0) {\n    node.log(`⚠️  Flow context is empty - this is normal after restart`);\n    node.log(`⚠️  Any connected ESP32 devices will need to re-register`);\n    node.log(`⚠️  Re-registration requests will be sent when simplified sensor data is received`);\n    \n    flow.set('devices', {});\n    flow.set('startup_time', Date.now());\n    \n    node.status({fill: 'yellow', shape: 'ring', text: 'Awaiting device registrations'});\n} else {\n    node.log(`✅ Found ${deviceCount} devices in context - normal operation`);\n    node.status({fill: 'green', shape: 'dot', text: `${deviceCount} devices restored`});\n}\n\n// Set a flag that we've just started up (useful for first-time device connections)\nflow.set('recently_started', true);\n\n// Clear the recently_started flag after 30 seconds\nsetTimeout(() => {\n    flow.set('recently_started', false);\n    node.log(`Startup period ended - normal operation mode`);\n}, 30000);\n\nreturn null;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 460,
+        "y": 640,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "connection_monitor",
+        "type": "inject",
+        "z": "badef27c232a01ee",
+        "name": "Connection Monitor",
+        "props": [
+            {
+                "p": "payload"
+            }
+        ],
+        "repeat": "10",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 160,
+        "y": 700,
+        "wires": [
+            [
+                "connection_health_check",
+                "pwa_health_check"
+            ]
+        ]
+    },
+    {
+        "id": "connection_health_check",
+        "type": "function",
+        "z": "badef27c232a01ee",
+        "name": "Connection Health Check",
+        "func": "// Monitor device health and REMOVE stale connections\n// Devices that miss heartbeats for too long are removed from registry\n// Note: WebSocket node count is TCP-level and will timeout separately\n\nconst devices = flow.get('devices') || {};\nconst now = Date.now();\nconst staleThreshold = 15000;  // 15 seconds (about 4 missed heartbeats)\nconst removeThreshold = 60000; // 60 seconds - remove from registry\n\nlet healthyDevices = 0;\nlet staleDevices = 0;\nlet removedDevices = [];\nlet recentDevices = [];\n\nfor (const uuid in devices) {\n    const device = devices[uuid];\n    const lastHeartbeat = device.lastHeartbeat || 0;\n    const timeSinceLastSeen = now - lastHeartbeat;\n    \n    if (timeSinceLastSeen > removeThreshold) {\n        // REMOVE: Device hasn't been seen for too long\n        removedDevices.push(device.deviceName);\n        delete devices[uuid];\n        node.log(`🗑️ Removed stale device: ${device.deviceName} (${Math.round(timeSinceLastSeen/1000)}s)`);\n    } else if (timeSinceLastSeen > staleThreshold) {\n        staleDevices++;\n        device.status = 'stale';\n        node.log(`📵 Device ${device.deviceName} is stale (${Math.round(timeSinceLastSeen/1000)}s)`);\n    } else {\n        healthyDevices++;\n        device.status = 'acknowledged';\n        if (timeSinceLastSeen < 5000) {\n            recentDevices.push(device.deviceName);\n        }\n    }\n}\n\n// Update device registry\nflow.set('devices', devices);\n\n// Status display\nlet statusText = `${healthyDevices} active`;\nif (staleDevices > 0) {\n    statusText += `, ${staleDevices} stale`;\n}\nif (removedDevices.length > 0) {\n    statusText += ` (removed ${removedDevices.length})`;\n}\n\nnode.status({\n    fill: staleDevices > 0 ? 'yellow' : (healthyDevices > 0 ? 'green' : 'gray'),\n    shape: 'dot',\n    text: statusText\n});\n\n// Log health summary every minute\nconst lastLogTime = context.get('last_health_log') || 0;\nif (now - lastLogTime > 60000) {\n    node.log(`=== DEVICE HEALTH: ${healthyDevices} active, ${staleDevices} stale ===`);\n    context.set('last_health_log', now);\n}\n\nreturn null;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 460,
+        "y": 700,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "pwa_websocket_in",
+        "type": "websocket in",
+        "z": "badef27c232a01ee",
+        "name": "PWA WebSocket In",
+        "server": "pwa_websocket_listener",
+        "client": "",
+        "x": 160,
+        "y": 940,
+        "wires": [
+            [
+                "pwa_message_parser",
+                "pwa_raw_debug"
+            ]
+        ]
+    },
+    {
+        "id": "pwa_message_parser",
+        "type": "function",
+        "z": "badef27c232a01ee",
+        "name": "PWA Message Parser",
+        "func": "// OPTIMIZED: Fast PWA message parsing with minimal overhead\n// ENHANCED: Added pwa_ping for live session tracking (immediate disconnect detection)\n\nlet message;\ntry {\n    message = JSON.parse(msg.payload);\n    msg.parsedMessage = message;\n    msg.sessionId = msg._session;\n\n    // Fast message type detection\n    const msgType = message.type;\n\n    // FAST PATH 1: PWA ping (for live session tracking)\n    if (msgType === 'pwa_ping') {\n        msg.messageType = 'pwa_ping';\n        msg.clientId = message.client_id || 'unknown';\n        return msg;\n    }\n\n    // FAST PATH 2: Actuator commands (skip logging/status)\n    // Accept both 'actuator_cmd' and 'actuator_command' for compatibility\n    if (msgType === 'actuator_cmd' || msgType === 'actuator_command') {\n        msg.messageType = 'actuator_cmd';\n        msg.deviceUUID = message.device;\n        msg.clientId = message.client_id || 'unknown';\n        return msg;\n    }\n\n    // Standard path for other message types\n    if (msgType === 'pwa_registration') {\n        msg.messageType = 'pwa_registration';\n        msg.clientId = message.client_id;\n    } else if (msgType === 'get_devices') {\n        msg.messageType = 'get_devices';\n        msg.clientId = message.client_id || 'unknown';\n    } else if (msgType === 'get_pwa_clients') {\n        msg.messageType = 'get_pwa_clients';\n        msg.clientId = message.client_id || 'unknown';\n    } else if (msgType === 'subscribe') {\n        msg.messageType = 'subscribe';\n        msg.deviceUUID = message.device;\n        msg.clientId = message.client || 'unknown';\n    } else if (msgType === 'unsubscribe') {\n        msg.messageType = 'unsubscribe';\n        msg.deviceUUID = message.device;\n        msg.clientId = message.client || 'unknown';\n    } else {\n        msg.messageType = 'unknown';\n        msg.clientId = message.client_id || 'unknown';\n    }\n\n    return msg;\n\n} catch (e) {\n    return null;\n}",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 460,
+        "y": 940,
+        "wires": [
+            [
+                "pwa_message_router"
+            ]
+        ]
+    },
+    {
+        "id": "pwa_message_router",
+        "type": "switch",
+        "z": "badef27c232a01ee",
+        "name": "PWA Message Router",
+        "property": "messageType",
+        "propertyType": "msg",
+        "rules": [
+            {
+                "t": "eq",
+                "v": "pwa_registration",
+                "vt": "str"
+            },
+            {
+                "t": "eq",
+                "v": "pwa_ping",
+                "vt": "str"
+            },
+            {
+                "t": "eq",
+                "v": "get_devices",
+                "vt": "str"
+            },
+            {
+                "t": "eq",
+                "v": "get_pwa_clients",
+                "vt": "str"
+            },
+            {
+                "t": "eq",
+                "v": "subscribe",
+                "vt": "str"
+            },
+            {
+                "t": "eq",
+                "v": "unsubscribe",
+                "vt": "str"
+            },
+            {
+                "t": "eq",
+                "v": "actuator_cmd",
+                "vt": "str"
+            },
+            {
+                "t": "else"
+            }
+        ],
+        "checkall": "true",
+        "repair": false,
+        "outputs": 8,
+        "x": 760,
+        "y": 940,
+        "wires": [
+            [
+                "pwa_registration_handler"
+            ],
+            [
+                "pwa_ping_handler"
+            ],
+            [
+                "device_list_provider"
+            ],
+            [
+                "pwa_client_list_provider"
+            ],
+            [
+                "pwa_subscription_handler"
+            ],
+            [
+                "pwa_unsubscribe_handler"
+            ],
+            [
+                "actuator_command_router"
+            ],
+            []
+        ]
+    },
+    {
+        "id": "pwa_unsubscribe_handler",
+        "type": "function",
+        "z": "badef27c232a01ee",
+        "name": "PWA Unsubscribe Handler",
+        "func": "// Handle PWA unsubscription from devices\n// Removes device from client's subscription list\n\nconst clientId = msg.clientId;\nconst deviceUUID = msg.deviceUUID;\nconst sessionId = msg.sessionId;\n\nnode.log(`[UNSUBSCRIBE] Client ${clientId} unsubscribing from ${deviceUUID}`);\n\nif (!clientId || !deviceUUID) {\n    node.error('[UNSUBSCRIBE] Invalid: missing client ID or device UUID');\n    return null;\n}\n\n// Get PWA clients from flow context\nconst pwaClients = flow.get('pwa_clients') || {};\nconst client = pwaClients[clientId];\n\nif (!client) {\n    node.warn(`[UNSUBSCRIBE] Client ${clientId} not found`);\n    return null;\n}\n\n// Remove device from subscriptions\nif (client.subscriptions) {\n    const index = client.subscriptions.indexOf(deviceUUID);\n    if (index > -1) {\n        client.subscriptions.splice(index, 1);\n        node.log(`[UNSUBSCRIBE] Removed ${deviceUUID.substring(0,8)}... from ${client.clientName}`);\n    }\n}\n\n// Save updated client\nclient.lastSeen = new Date().toISOString();\nflow.set('pwa_clients', pwaClients);\n\nnode.status({\n    fill: 'yellow',\n    shape: 'ring',\n    text: `${client.clientName} -x- ${deviceUUID.substring(0,8)}...`\n});\n\n// Send acknowledgment\nconst response = {\n    type: 'unsubscription_ack',\n    device: deviceUUID,\n    client_id: clientId,\n    status: 'accepted',\n    timestamp: Date.now()\n};\n\nmsg.payload = JSON.stringify(response);\nmsg._session = sessionId;\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1120,
+        "y": 1080,
+        "wires": [
+            [
+                "pwa_websocket_out"
+            ]
+        ]
+    },
+    {
+        "id": "pwa_registration_handler",
+        "type": "function",
+        "z": "badef27c232a01ee",
+        "name": "PWA Registration Handler",
+        "func": "// Handle PWA registration and store to flow context\n// Manages PWA client registry for broadcasting and subscription management\n\nconst regMsg = msg.parsedMessage;\nconst clientId = msg.clientId;\nconst sessionId = msg.sessionId;\n\n// Validate registration message\nif (!clientId || !regMsg.client_name) {\n    node.error('Invalid PWA registration message: missing client ID or name', msg);\n    return null;\n}\n\n// Get PWA clients from flow context\nconst pwaClients = flow.get('pwa_clients') || {};\n\n// Store PWA client registration data\npwaClients[clientId] = {\n    sessionId: sessionId,\n    clientName: regMsg.client_name,\n    userAgent: regMsg.user_agent || 'Unknown',\n    status: 'registered',\n    registrationTime: new Date().toISOString(),\n    lastSeen: new Date().toISOString(),\n    subscriptions: [] // Devices this client is subscribed to\n};\n\n// Save back to flow context\nflow.set('pwa_clients', pwaClients);\n\n// Log registration\nnode.log(`PWA registered: ${regMsg.client_name} (${clientId})`);\n\n// Update node status\nnode.status({\n    fill: 'green',\n    shape: 'dot',\n    text: `Registered: ${regMsg.client_name}`\n});\n\n// Generate registration acknowledgment message\nconst ackResponse = {\n    type: 'pwa_registration_ack',\n    client_id: clientId,\n    status: 'accepted',\n    message: 'PWA client registered successfully',\n    timestamp: Date.now()\n};\n\n// Prepare response message with session targeting\nmsg.payload = JSON.stringify(ackResponse);\nmsg._session = sessionId;  // Target specific PWA session\nmsg.ackResponse = ackResponse;  // For debugging\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1110,
+        "y": 800,
+        "wires": [
+            [
+                "pwa_websocket_out"
+            ]
+        ]
+    },
+    {
+        "id": "pwa_ping_handler",
+        "type": "function",
+        "z": "badef27c232a01ee",
+        "name": "PWA Ping Handler",
+        "func": "// ULTRA-FAST: Handle PWA ping for live session tracking\n// PWA clients send ping every 5s, stale after 15s = immediate disconnect detection\n// This is the PRIMARY mechanism for tracking live connections\n\nconst clientId = msg.clientId;\nconst sessionId = msg.sessionId;\n\n// Get PWA clients from flow context\nconst pwaClients = flow.get('pwa_clients') || {};\n\n// Try to find client by client_id first\nlet client = pwaClients[clientId];\n\n// If not found by ID, try to find by session (fallback for unregistered pings)\nif (!client) {\n    for (const id in pwaClients) {\n        const candidate = pwaClients[id];\n        if (candidate.sessionId) {\n            const storedSession = candidate.sessionId;\n            if (storedSession === sessionId ||\n                JSON.stringify(storedSession) === JSON.stringify(sessionId) ||\n                String(storedSession) === String(sessionId)) {\n                client = candidate;\n                break;\n            }\n        }\n    }\n}\n\nif (!client) {\n    // Unknown client - they need to register first\n    node.warn(`Ping from unregistered PWA client: ${clientId}`);\n    return null;\n}\n\n// Update lastSeen timestamp (critical for disconnect detection)\nclient.lastSeen = new Date().toISOString();\nclient.lastPing = Date.now();\nflow.set('pwa_clients', pwaClients);\n\n// Silent operation - no output, no logging for performance\nreturn null;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1090,
+        "y": 860,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "device_list_provider",
+        "type": "function",
+        "z": "badef27c232a01ee",
+        "name": "Device List Provider",
+        "func": "// Provide list of registered devices to PWA clients\n// Returns all devices with their current status and capabilities\n\nconst clientId = msg.clientId;\nconst sessionId = msg.sessionId;\n\n// Get devices from flow context\nconst devices = flow.get('devices') || {};\nconst deviceList = [];\n\n// Convert devices object to array format for PWA\nfor (const uuid in devices) {\n    const device = devices[uuid];\n    deviceList.push({\n        uuid: uuid,\n        deviceName: device.deviceName,\n        deviceType: device.deviceType,\n        status: device.status,\n        sensors: device.sensors || [],\n        actuators: device.actuators || [],\n        lastSeen: device.lastSeen,\n        ip: device.ip,\n        library: device.library,\n        version: device.version\n    });\n}\n\n// Update PWA client last seen\nconst pwaClients = flow.get('pwa_clients') || {};\nif (pwaClients[clientId]) {\n    pwaClients[clientId].lastSeen = new Date().toISOString();\n    flow.set('pwa_clients', pwaClients);\n}\n\n// Generate device list response\nconst deviceListResponse = {\n    type: 'device_list',\n    devices: deviceList,\n    timestamp: Date.now()\n};\n\n// Log request\nnode.log(`Device list requested by ${clientId} - returning ${deviceList.length} devices`);\n\n// Update node status\nnode.status({\n    fill: 'blue',\n    shape: 'dot',\n    text: `Sent ${deviceList.length} devices to ${clientId}`\n});\n\n// Prepare response message\nmsg.payload = JSON.stringify(deviceListResponse);\nmsg._session = sessionId;  // Target specific PWA session\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1100,
+        "y": 920,
+        "wires": [
+            [
+                "pwa_websocket_out"
+            ]
+        ]
+    },
+    {
+        "id": "pwa_client_list_provider",
+        "type": "function",
+        "z": "badef27c232a01ee",
+        "name": "PWA Client List Provider",
+        "func": "// Provide list of registered PWA clients\n// Returns all PWA clients with their current status\n\nconst clientId = msg.clientId;\nconst sessionId = msg.sessionId;\n\n// Get PWA clients from flow context\nconst pwaClients = flow.get('pwa_clients') || {};\nconst clientList = [];\n\n// Convert clients object to array format\nfor (const id in pwaClients) {\n    const client = pwaClients[id];\n    clientList.push({\n        clientId: id,\n        clientName: client.clientName,\n        status: client.status,\n        registrationTime: client.registrationTime,\n        lastSeen: client.lastSeen,\n        subscriptions: client.subscriptions || []\n    });\n}\n\n// Update requesting client last seen\nif (pwaClients[clientId]) {\n    pwaClients[clientId].lastSeen = new Date().toISOString();\n    flow.set('pwa_clients', pwaClients);\n}\n\n// Generate client list response\nconst clientListResponse = {\n    type: 'pwa_client_list',\n    clients: clientList,\n    timestamp: Date.now()\n};\n\n// Log request\nnode.log(`PWA client list requested by ${clientId} - returning ${clientList.length} clients`);\n\n// Update node status\nnode.status({\n    fill: 'blue',\n    shape: 'dot',\n    text: `Sent ${clientList.length} clients to ${clientId}`\n});\n\n// Prepare response message\nmsg.payload = JSON.stringify(clientListResponse);\nmsg._session = sessionId;  // Target specific PWA session\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1110,
+        "y": 980,
+        "wires": [
+            [
+                "pwa_websocket_out"
+            ]
+        ]
+    },
+    {
+        "id": "pwa_subscription_handler",
+        "type": "function",
+        "z": "badef27c232a01ee",
+        "name": "PWA Subscription Handler",
+        "func": "// Handle PWA subscription to specific devices\n// DEBUG VERSION: Enhanced logging to diagnose subscription issues\n\nconst subMsg = msg.parsedMessage;\nconst clientId = msg.clientId;\nconst deviceUUID = msg.deviceUUID;\nconst sessionId = msg.sessionId;\n\n// DEBUG: Log subscription request\nnode.log(`\\n=== SUBSCRIPTION REQUEST ===`);\nnode.log(`[SUBSCRIBE] Client ID: ${clientId}`);\nnode.log(`[SUBSCRIBE] Device UUID: ${deviceUUID}`);\nnode.log(`[SUBSCRIBE] Session ID: ${JSON.stringify(sessionId)}`);\n\n// Validate subscription message\nif (!clientId || !deviceUUID) {\n    node.error('[SUBSCRIBE] Invalid: missing client ID or device UUID', msg);\n    return null;\n}\n\n// Get PWA clients from flow context\nconst pwaClients = flow.get('pwa_clients') || {};\nconst client = pwaClients[clientId];\n\nnode.log(`[SUBSCRIBE] Total PWA clients in registry: ${Object.keys(pwaClients).length}`);\nnode.log(`[SUBSCRIBE] Client IDs: ${Object.keys(pwaClients).join(', ')}`);\n\nif (!client) {\n    node.error(`[SUBSCRIBE] FAILED: Client ${clientId} not found in registry`, msg);\n    node.error(`[SUBSCRIBE] Available clients: ${Object.keys(pwaClients).join(', ')}`);\n    return null;\n}\n\nnode.log(`[SUBSCRIBE] Found client: ${client.clientName}`);\nnode.log(`[SUBSCRIBE] Current subscriptions: [${(client.subscriptions || []).join(', ')}]`);\n\n// Update client subscriptions\nif (!client.subscriptions) {\n    client.subscriptions = [];\n}\n\n// Add device to subscriptions if not already present\nif (!client.subscriptions.includes(deviceUUID)) {\n    client.subscriptions.push(deviceUUID);\n    node.log(`[SUBSCRIBE] ADDED subscription: ${clientId} → ${deviceUUID}`);\n} else {\n    node.log(`[SUBSCRIBE] Already subscribed: ${clientId} → ${deviceUUID}`);\n}\n\n// Update last seen and save\nclient.lastSeen = new Date().toISOString();\nflow.set('pwa_clients', pwaClients);\n\n// VERIFY: Read back and confirm\nconst verifyClients = flow.get('pwa_clients') || {};\nconst verifyClient = verifyClients[clientId];\nnode.log(`[SUBSCRIBE] VERIFIED subscriptions: [${(verifyClient?.subscriptions || []).join(', ')}]`);\nnode.log(`=== SUBSCRIPTION COMPLETE ===\\n`);\n\n// Update node status\nnode.status({\n    fill: 'green',\n    shape: 'dot',\n    text: `${client.clientName} → ${deviceUUID.substring(0,8)}...`\n});\n\n// Generate subscription acknowledgment\nconst subResponse = {\n    type: 'subscription_ack',\n    device: deviceUUID,\n    client_id: clientId,\n    status: 'accepted',\n    message: 'Subscription successful',\n    timestamp: Date.now()\n};\n\n// Prepare response message\nmsg.payload = JSON.stringify(subResponse);\nmsg._session = sessionId;  // Target specific PWA session\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1120,
+        "y": 1020,
+        "wires": [
+            [
+                "pwa_websocket_out"
+            ]
+        ]
+    },
+    {
+        "id": "actuator_command_router",
+        "type": "function",
+        "z": "badef27c232a01ee",
+        "name": "Actuator Command Router",
+        "func": "// ULTRA-OPTIMIZED: Generate ultra-compact actuator commands\n// Uses single-letter codes for simple actuators, JSON for complex ones\n\nconst cmdMsg = msg.parsedMessage;\nconst deviceUUID = msg.deviceUUID;\n\n// Fast validation\nif (!deviceUUID || !cmdMsg.actuator || cmdMsg.value === undefined) {\n    return null;\n}\n\n// Single context read\nconst devices = flow.get('devices') || {};\nconst device = devices[deviceUUID];\n\nif (!device) {\n    node.warn(`⚠️ Device not found: ${deviceUUID}`);\n    return null;\n}\n\n// Check if we have a compact code for this actuator\nconst actuatorCodeMap = device.actuatorCodeMap || {};\nconst actuatorInfo = actuatorCodeMap[cmdMsg.actuator];\n\nlet compactCmd;\n\nif (actuatorInfo && actuatorInfo.code) {\n    // ULTRA-COMPACT PATH: Use single-letter code\n    const code = actuatorInfo.code;\n    const value = cmdMsg.value;\n    const dataType = actuatorInfo.dataType;\n    \n    // Format based on data type\n    if (dataType === 'boolean') {\n        // L1 or L0 - handle string 'on'/'off', bool, or int\n        let boolVal;\n        if (typeof value === 'string') {\n            const v = value.toLowerCase();\n            boolVal = (v === 'on' || v === '1' || v === 'true');\n        } else {\n            boolVal = !!value;\n        }\n        compactCmd = code + (boolVal ? '1' : '0');\n    } else if (dataType === 'int' || dataType === 'float') {\n        // S90 or P128 or V50.5\n        compactCmd = code + value;\n    } else if (dataType === 'object' && actuatorInfo.type === 'rgb_led') {\n        // R255,128,0\n        compactCmd = code + value.r + ',' + value.g + ',' + value.b;\n    } else if (dataType === 'object' && actuatorInfo.type === 'stepper') {\n        // T200,1,100\n        compactCmd = code + value.steps + ',' + value.direction + ',' + value.speed;\n    } else if (dataType === 'object' && actuatorInfo.type === 'tone_buzzer') {\n        // Z440,1000\n        compactCmd = code + value.frequency + ',' + value.duration;\n    } else {\n        // Complex object - use JSON fallback\n        compactCmd = null;\n    }\n}\n\nif (compactCmd) {\n    // Ultra-compact format (2-10 bytes)\n    msg.payload = compactCmd;\n} else {\n    // JSON fallback for complex actuators\n    const actuatorCmd = {\n        a: cmdMsg.actuator,\n        v: cmdMsg.value\n    };\n    msg.payload = JSON.stringify(actuatorCmd);\n}\n\nmsg._session = device.sessionId;\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1120,
+        "y": 1140,
+        "wires": [
+            [
+                "cc0d7266011250d0"
+            ]
+        ]
+    },
+    {
+        "id": "pwa_websocket_out",
+        "type": "websocket out",
+        "z": "badef27c232a01ee",
+        "name": "PWA WebSocket Out",
+        "server": "pwa_websocket_listener",
+        "client": "",
+        "x": 2120,
+        "y": 660,
+        "wires": []
+    },
+    {
+        "id": "sensor_data_broadcaster",
+        "type": "function",
+        "z": "badef27c232a01ee",
+        "name": "Sensor Data Broadcaster",
+        "func": "// Broadcast sensor data to ONLY subscribed PWA clients\n// DEBUG VERSION: Enhanced logging to diagnose subscription issues\n\nconst sensorData = msg.payload;\nconst deviceUUID = msg.deviceUUID;\n\n// DEBUG: Log incoming data\nnode.log(`[BROADCASTER] Processing sensor data for device: ${deviceUUID}`);\nnode.log(`[BROADCASTER] Sensor: ${sensorData.s}, Value: ${sensorData.v}`);\n\nif (!sensorData || !deviceUUID) {\n    node.warn('[BROADCASTER] Missing sensor data or device UUID');\n    return null;\n}\n\n// Transform compact format {d,s,v,t} to standard PWA format\nconst pwaMessage = {\n    type: 'sensor_data',\n    device: deviceUUID,\n    sensor: sensorData.s,\n    value: sensorData.v,\n    timestamp: sensorData.t || Date.now()\n};\n\n// Get PWA clients from flow context\nconst pwaClients = flow.get('pwa_clients') || {};\nconst clientCount = Object.keys(pwaClients).length;\n\n// DEBUG: Log all PWA clients and their subscriptions\nnode.log(`[BROADCASTER] Total PWA clients: ${clientCount}`);\nfor (const clientId in pwaClients) {\n    const client = pwaClients[clientId];\n    const subs = client.subscriptions || [];\n    node.log(`[BROADCASTER] Client ${clientId.substring(0,12)}... subscribed to: [${subs.join(', ')}]`);\n}\n\n// Find and send to ONLY PWA clients subscribed to this device\nlet subscribedClients = 0;\nconst subscriberNames = [];\n\nfor (const clientId in pwaClients) {\n    const client = pwaClients[clientId];\n    const subs = client.subscriptions || [];\n    \n    // DEBUG: Check subscription match\n    const isSubscribed = subs.includes(deviceUUID);\n    node.log(`[BROADCASTER] Client ${clientId.substring(0,12)}... subscribed to ${deviceUUID.substring(0,8)}...? ${isSubscribed}`);\n    \n    if (isSubscribed) {\n        // Send individual message to each subscribed client\n        node.log(`[BROADCASTER] SENDING to ${client.clientName} (session: ${JSON.stringify(client.sessionId).substring(0,20)}...)`);\n        node.send({\n            _session: client.sessionId,\n            payload: JSON.stringify(pwaMessage)\n        });\n        subscribedClients++;\n        subscriberNames.push(client.clientName || clientId.substring(0,8));\n    } else {\n        node.log(`[BROADCASTER] SKIPPING ${client.clientName} - not subscribed to this device`);\n    }\n}\n\n// Log broadcast result\nif (subscribedClients > 0) {\n    node.log(`[BROADCASTER] Sent to ${subscribedClients} clients: ${subscriberNames.join(', ')}`);\n    node.status({\n        fill: 'blue',\n        shape: 'dot',\n        text: `${sensorData.s} → ${subscribedClients} PWAs`\n    });\n} else {\n    node.log(`[BROADCASTER] No subscribers for device ${deviceUUID.substring(0,8)}...`);\n    node.status({\n        fill: 'gray',\n        shape: 'ring',\n        text: `${sensorData.s} (no subscribers)`\n    });\n}\n\n// Return null since we already sent messages via node.send()\nreturn null;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1790,
+        "y": 460,
+        "wires": [
+            [
+                "pwa_websocket_out"
+            ]
+        ]
+    },
+    {
+        "id": "pwa_raw_debug",
+        "type": "debug",
+        "z": "badef27c232a01ee",
+        "name": "PWA RAW",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 410,
+        "y": 880,
+        "wires": []
+    },
+    {
+        "id": "cc0d7266011250d0",
+        "type": "link out",
+        "z": "badef27c232a01ee",
+        "name": "Device WS Out",
+        "mode": "link",
+        "links": [
+            "52e0d8d8b9d385fe"
+        ],
+        "x": 1295,
+        "y": 1140,
+        "wires": []
+    },
+    {
+        "id": "52e0d8d8b9d385fe",
+        "type": "link in",
+        "z": "badef27c232a01ee",
+        "name": "Device WS Out",
+        "links": [
+            "cc0d7266011250d0",
+            "13e213ec22409f44",
+            "3d8960a2c9d5601b",
+            "vibrator_link_out",
+            "display_link_out",
+            "ledbar_link_out",
+            "rgbstick_link_out"
+        ],
+        "x": 1585,
+        "y": 240,
+        "wires": [
+            [
+                "device_websocket_out",
+                "0b518c741ca9c65a"
+            ]
+        ]
+    },
+    {
+        "id": "led_toggle_inject",
+        "type": "inject",
+        "z": "badef27c232a01ee",
+        "g": "a8bab09a4e76bc62",
+        "name": "Toggle LED (ON)",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "ledState",
+                "v": "1",
+                "vt": "num"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "LED ON",
+        "payloadType": "str",
+        "x": 160,
+        "y": 2180,
+        "wires": [
+            [
+                "led_command_formatter"
+            ]
+        ]
+    },
+    {
+        "id": "led_off_inject",
+        "type": "inject",
+        "z": "badef27c232a01ee",
+        "g": "a8bab09a4e76bc62",
+        "name": "Toggle LED (OFF)",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "ledState",
+                "v": "0",
+                "vt": "num"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "LED OFF",
+        "payloadType": "str",
+        "x": 160,
+        "y": 2240,
+        "wires": [
+            [
+                "led_command_formatter"
+            ]
+        ]
+    },
+    {
+        "id": "led_command_formatter",
+        "type": "function",
+        "z": "badef27c232a01ee",
+        "g": "a8bab09a4e76bc62",
+        "name": "LED Command Formatter",
+        "func": "// ULTRA-COMPACT: Format LED toggle command for ESP32\n// Uses ultra-compact format: L1 or L0\n\nconst ledState = msg.ledState;\n\n// Get all devices from flow context\nconst devices = flow.get('devices') || {};\nconst deviceList = Object.keys(devices);\n\nif (deviceList.length === 0) {\n    node.error('No devices registered - cannot send LED command', msg);\n    node.status({fill: 'red', shape: 'ring', text: 'No devices'});\n    return null;\n}\n\n// Get the first device (or you can filter by name)\nconst deviceUUID = deviceList[0];\nconst device = devices[deviceUUID];\n\nnode.log(`Sending LED command to ${device.deviceName} (${deviceUUID.substring(0,8)}...)`);\n\n// Check if device has actuator code map\nconst actuatorCodeMap = device.actuatorCodeMap || {};\nconst ledActuator = actuatorCodeMap['led'];\n\nlet compactCmd;\nif (ledActuator && ledActuator.code) {\n    // ULTRA-COMPACT: L1 or L0 (2 bytes)\n    compactCmd = ledActuator.code + (ledState ? '1' : '0');\n    node.log(`  Ultra-compact: ${compactCmd}`);\n} else {\n    // Fallback to JSON if no code mapping\n    compactCmd = JSON.stringify({a: 'led', v: ledState});\n    node.log(`  JSON fallback: ${compactCmd}`);\n}\n\n// Update node status\nnode.status({\n    fill: ledState === 1 ? 'green' : 'yellow',\n    shape: 'dot',\n    text: `${compactCmd} → ${device.deviceName}`\n});\n\n// Prepare message for device\nmsg.payload = compactCmd;\nmsg._session = device.sessionId;  // Target specific device session\nmsg.targetDevice = deviceUUID;\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 460,
+        "y": 2210,
+        "wires": [
+            [
+                "led_command_debug",
+                "13e213ec22409f44"
+            ]
+        ]
+    },
+    {
+        "id": "led_command_debug",
+        "type": "debug",
+        "z": "badef27c232a01ee",
+        "g": "a8bab09a4e76bc62",
+        "name": "LED Command",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 750,
+        "y": 2210,
+        "wires": []
+    },
+    {
+        "id": "rgb_red_inject",
+        "type": "inject",
+        "z": "badef27c232a01ee",
+        "g": "a8bab09a4e76bc62",
+        "name": "RGB Red",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "rgbValue",
+                "v": "{\"r\":255,\"g\":0,\"b\":0}",
+                "vt": "json"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "RGB Red",
+        "payloadType": "str",
+        "x": 150,
+        "y": 2330,
+        "wires": [
+            [
+                "rgb_command_formatter"
+            ]
+        ]
+    },
+    {
+        "id": "rgb_green_inject",
+        "type": "inject",
+        "z": "badef27c232a01ee",
+        "g": "a8bab09a4e76bc62",
+        "name": "RGB Green",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "rgbValue",
+                "v": "{\"r\":0,\"g\":255,\"b\":0}",
+                "vt": "json"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "RGB Green",
+        "payloadType": "str",
+        "x": 160,
+        "y": 2370,
+        "wires": [
+            [
+                "rgb_command_formatter"
+            ]
+        ]
+    },
+    {
+        "id": "rgb_blue_inject",
+        "type": "inject",
+        "z": "badef27c232a01ee",
+        "g": "a8bab09a4e76bc62",
+        "name": "RGB Blue",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "rgbValue",
+                "v": "{\"r\":0,\"g\":0,\"b\":255}",
+                "vt": "json"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "RGB Blue",
+        "payloadType": "str",
+        "x": 150,
+        "y": 2410,
+        "wires": [
+            [
+                "rgb_command_formatter"
+            ]
+        ]
+    },
+    {
+        "id": "rgb_white_inject",
+        "type": "inject",
+        "z": "badef27c232a01ee",
+        "g": "a8bab09a4e76bc62",
+        "name": "RGB White",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "rgbValue",
+                "v": "{\"r\":255,\"g\":255,\"b\":255}",
+                "vt": "json"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "RGB White",
+        "payloadType": "str",
+        "x": 160,
+        "y": 2450,
+        "wires": [
+            [
+                "rgb_command_formatter"
+            ]
+        ]
+    },
+    {
+        "id": "rgb_off_inject",
+        "type": "inject",
+        "z": "badef27c232a01ee",
+        "g": "a8bab09a4e76bc62",
+        "name": "RGB Off",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "rgbValue",
+                "v": "{\"r\":0,\"g\":0,\"b\":0}",
+                "vt": "json"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "RGB Off",
+        "payloadType": "str",
+        "x": 150,
+        "y": 2490,
+        "wires": [
+            [
+                "rgb_command_formatter"
+            ]
+        ]
+    },
+    {
+        "id": "rgb_command_formatter",
+        "type": "function",
+        "z": "badef27c232a01ee",
+        "g": "a8bab09a4e76bc62",
+        "name": "RGB Command Formatter",
+        "func": "// Format RGB LED command for ESP32\n// Uses ultra-compact format: R255,128,0\n\nconst rgbValue = msg.rgbValue;\n\n// Get all devices from flow context\nconst devices = flow.get('devices') || {};\nconst deviceList = Object.keys(devices);\n\nif (deviceList.length === 0) {\n    node.error('No devices registered - cannot send RGB command', msg);\n    node.status({fill: 'red', shape: 'ring', text: 'No devices'});\n    return null;\n}\n\n// Get the first device (or you can filter by name)\nconst deviceUUID = deviceList[0];\nconst device = devices[deviceUUID];\n\nnode.log(`Sending RGB command to ${device.deviceName} (${deviceUUID.substring(0,8)}...)`);\n\n// Check if device has actuator code map for rgb\nconst actuatorCodeMap = device.actuatorCodeMap || {};\nconst rgbActuator = actuatorCodeMap['rgb'];\n\nlet compactCmd;\nif (rgbActuator && rgbActuator.code) {\n    // ULTRA-COMPACT: R255,128,0 (up to 12 bytes)\n    compactCmd = rgbActuator.code + rgbValue.r + ',' + rgbValue.g + ',' + rgbValue.b;\n    node.log(`  Ultra-compact: ${compactCmd}`);\n} else {\n    // Fallback to JSON if no code mapping\n    compactCmd = JSON.stringify({a: 'rgb', v: rgbValue});\n    node.log(`  JSON fallback: ${compactCmd}`);\n}\n\n// Update node status with color preview\nconst colorHex = '#' + \n    rgbValue.r.toString(16).padStart(2,'0') + \n    rgbValue.g.toString(16).padStart(2,'0') + \n    rgbValue.b.toString(16).padStart(2,'0');\n\nnode.status({\n    fill: rgbValue.r > 0 || rgbValue.g > 0 || rgbValue.b > 0 ? 'green' : 'grey',\n    shape: 'dot',\n    text: `${compactCmd} → ${device.deviceName}`\n});\n\n// Prepare message for device\nmsg.payload = compactCmd;\nmsg._session = device.sessionId;\nmsg.targetDevice = deviceUUID;\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 470,
+        "y": 2410,
+        "wires": [
+            [
+                "rgb_command_debug",
+                "3d8960a2c9d5601b"
+            ]
+        ]
+    },
+    {
+        "id": "rgb_command_debug",
+        "type": "debug",
+        "z": "badef27c232a01ee",
+        "g": "a8bab09a4e76bc62",
+        "name": "RGB Command",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 770,
+        "y": 2410,
+        "wires": []
+    },
+    {
+        "id": "pwa_health_check",
+        "type": "function",
+        "z": "badef27c232a01ee",
+        "name": "PWA Health Check",
+        "func": "// PWA Live Session Registry - Immediate Disconnect Detection\n// PWA clients MUST send pwa_ping every 5s to maintain their session\n// Stale threshold: 15s (3 missed pings = disconnected = immediate removal)\n// This ensures the PWA registry only contains LIVE connections\n\nconst pwaClients = flow.get('pwa_clients') || {};\nconst now = Date.now();\nconst staleThreshold = 15000; // 15 seconds (3 missed pings)\n\nlet activeClients = 0;\nlet staleClients = 0;\nconst clientsToRemove = [];\n\nfor (const clientId in pwaClients) {\n    const client = pwaClients[clientId];\n    const lastSeen = new Date(client.lastSeen).getTime();\n    const timeSinceLastSeen = now - lastSeen;\n\n    if (timeSinceLastSeen > staleThreshold) {\n        staleClients++;\n        clientsToRemove.push(clientId);\n        node.log(`🔌 PWA DISCONNECTED: ${client.clientName} (${clientId}) - no ping for ${Math.round(timeSinceLastSeen/1000)}s`);\n    } else {\n        activeClients++;\n    }\n}\n\n// Remove stale clients IMMEDIATELY\nfor (const clientId of clientsToRemove) {\n    delete pwaClients[clientId];\n}\n\nif (clientsToRemove.length > 0) {\n    flow.set('pwa_clients', pwaClients);\n    node.log(`✅ Deregistered ${clientsToRemove.length} disconnected PWA client(s)`);\n}\n\n// Status display\nlet statusText = `${activeClients} live PWAs`;\nif (staleClients > 0) {\n    statusText += ` (${staleClients} disconnected)`;\n}\n\nnode.status({\n    fill: activeClients > 0 ? 'green' : 'gray',\n    shape: 'dot',\n    text: statusText\n});\n\nreturn null;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 460,
+        "y": 760,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "compact_sensor_data_handler",
+        "type": "function",
+        "z": "badef27c232a01ee",
+        "name": "Compact Sensor Data Handler",
+        "func": "// ULTRA-COMPACT: Handle ultra-compact sensor data and lookup device by session\n// Parses compact formats: S57.41, B1, I0.12,-0.05,9.81\n\nconst sensorCode = msg.sensorCode;\nconst valueStr = msg.sensorValueStr;\nconst sessionId = msg.sessionId;\n\n// Get devices from flow context\nconst devices = flow.get('devices') || {};\nlet deviceUUID = null;\nlet device = null;\n\n// Lookup device by session ID\nfor (const uuid in devices) {\n    const candidate = devices[uuid];\n    if (candidate.sessionId) {\n        const storedSession = candidate.sessionId;\n\n        if (JSON.stringify(storedSession) === JSON.stringify(sessionId)) {\n            deviceUUID = uuid;\n            device = candidate;\n            node.log(`[COMPACT] ✓ MATCHED: ${device.deviceName} → UUID ${uuid}`);\n            break;\n        }\n    }\n}\n\n// Device not found - request re-registration\nif (!device) {\n    node.warn(`[COMPACT] ❌ Unknown session`);\n\n    const reRegRequest = {\n        type: 're_register_request',\n        message: 'Session not found, please re-register',\n        timestamp: Date.now(),\n        reason: 'compact_sensor_session_not_found'\n    };\n\n    msg.payload = JSON.stringify(reRegRequest);\n    msg._session = sessionId;\n    msg.isReRegRequest = true;\n    return msg;\n}\n\n// SUCCESS: Device found - decode compact sensor data\ndevice.lastSeen = new Date().toISOString();\ndevice.lastHeartbeat = Date.now();\n\n// Find sensor name from code map\nconst sensorCodeMap = device.sensorCodeMap || {};\nlet sensorName = null;\nlet sensorType = null;\n\nfor (const name in sensorCodeMap) {\n    if (sensorCodeMap[name].code === sensorCode) {\n        sensorName = name;\n        sensorType = sensorCodeMap[name].type;\n        break;\n    }\n}\n\nif (!sensorName) {\n    node.warn(`Unknown sensor code: ${sensorCode}`);\n    return null;\n}\n\n// Parse value based on sensor type\nlet value;\nif (sensorCode === 'I') {\n    // IMU data: supports 3-DOF, 6-DOF, and 9-DOF formats\n    const values = valueStr.split(',').map(v => parseFloat(v));\n    if (values.length === 9) {\n        // 9-DOF IMU (accel + gyro + mag)\n        value = {\n            accel: {x: values[0], y: values[1], z: values[2]},\n            gyro: {x: values[3], y: values[4], z: values[5]},\n            mag: {x: values[6], y: values[7], z: values[8]}\n        };\n    } else if (values.length === 6) {\n        // 6-DOF IMU (accel + gyro)\n        value = {\n            accel: {x: values[0], y: values[1], z: values[2]},\n            gyro: {x: values[3], y: values[4], z: values[5]}\n        };\n    } else if (values.length === 3) {\n        // 3-DOF Accelerometer only\n        value = {\n            accel: {x: values[0], y: values[1], z: values[2]}\n        };\n    }\n} else if (sensorCode === 'B' || sensorCode === 'M') {\n    // Boolean: B1 or B0\n    value = valueStr === '1';\n} else {\n    // Numeric value: S57.41, T24.5, etc.\n    value = parseFloat(valueStr);\n}\n\n// Save updated device info\nflow.set('devices', devices);\n\n// OPTIMIZED: Ultra-compact streaming format for PWA\n// PWA already knows device details from device_list, so we only send:\n// d = short device ID (first 8 chars), s = sensor name, v = value, t = timestamp\nconst sensorData = {\n    d: deviceUUID.substring(0, 8),  // Short device ID\n    s: sensorName,\n    v: value,\n    t: Date.now()  // Server-side timestamp\n};\n\nnode.log(`Compact sensor: ${device.deviceName} ${sensorName} = ${typeof value === 'object' ? JSON.stringify(value) : value}`);\n\n// Prepare message for PWA broadcast\nmsg.payload = sensorData;\nmsg.isPWABroadcast = true;\nmsg.deviceUUID = deviceUUID;\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1110,
+        "y": 400,
+        "wires": [
+            [
+                "sensor_data_router"
+            ]
+        ]
+    },
+    {
+        "id": "13e213ec22409f44",
+        "type": "link out",
+        "z": "badef27c232a01ee",
+        "g": "a8bab09a4e76bc62",
+        "name": "link out 1",
+        "mode": "link",
+        "links": [
+            "52e0d8d8b9d385fe"
+        ],
+        "x": 625,
+        "y": 2250,
+        "wires": []
+    },
+    {
+        "id": "3d8960a2c9d5601b",
+        "type": "link out",
+        "z": "badef27c232a01ee",
+        "g": "a8bab09a4e76bc62",
+        "name": "link out 2",
+        "mode": "link",
+        "links": [
+            "52e0d8d8b9d385fe"
+        ],
+        "x": 635,
+        "y": 2470,
+        "wires": []
+    },
+    {
+        "id": "vibrator_on_inject",
+        "type": "inject",
+        "z": "badef27c232a01ee",
+        "g": "a8bab09a4e76bc62",
+        "name": "Vibrator ON",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "vibratorState",
+                "v": "1",
+                "vt": "num"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "Vibrator ON",
+        "payloadType": "str",
+        "x": 160,
+        "y": 2560,
+        "wires": [
+            [
+                "vibrator_command_formatter"
+            ]
+        ]
+    },
+    {
+        "id": "vibrator_off_inject",
+        "type": "inject",
+        "z": "badef27c232a01ee",
+        "g": "a8bab09a4e76bc62",
+        "name": "Vibrator OFF",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "vibratorState",
+                "v": "0",
+                "vt": "num"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "Vibrator OFF",
+        "payloadType": "str",
+        "x": 160,
+        "y": 2600,
+        "wires": [
+            [
+                "vibrator_command_formatter"
+            ]
+        ]
+    },
+    {
+        "id": "vibrator_command_formatter",
+        "type": "function",
+        "z": "badef27c232a01ee",
+        "g": "a8bab09a4e76bc62",
+        "name": "Vibrator Command Formatter",
+        "func": "// Format Vibrator command for ESP32\n// Uses ultra-compact format: B1 or B0 (uses buzzer code)\n\nconst vibratorState = msg.vibratorState;\n\n// Get all devices from flow context\nconst devices = flow.get('devices') || {};\nconst deviceList = Object.keys(devices);\n\nif (deviceList.length === 0) {\n    node.error('No devices registered - cannot send Vibrator command', msg);\n    node.status({fill: 'red', shape: 'ring', text: 'No devices'});\n    return null;\n}\n\n// Get the first device (or you can filter by name)\nconst deviceUUID = deviceList[0];\nconst device = devices[deviceUUID];\n\nnode.log(`Sending Vibrator command to ${device.deviceName} (${deviceUUID.substring(0,8)}...)`);\n\n// Check if device has actuator code map for vibrator\nconst actuatorCodeMap = device.actuatorCodeMap || {};\nconst vibratorActuator = actuatorCodeMap['vibrator'];\n\nlet compactCmd;\nif (vibratorActuator && vibratorActuator.code) {\n    // ULTRA-COMPACT: B1 or B0 (2 bytes)\n    compactCmd = vibratorActuator.code + (vibratorState ? '1' : '0');\n    node.log(`  Ultra-compact: ${compactCmd}`);\n} else {\n    // Fallback to JSON if no code mapping\n    compactCmd = JSON.stringify({a: 'vibrator', v: vibratorState});\n    node.log(`  JSON fallback: ${compactCmd}`);\n}\n\n// Update node status\nnode.status({\n    fill: vibratorState === 1 ? 'green' : 'grey',\n    shape: 'dot',\n    text: `${compactCmd} → ${device.deviceName}`\n});\n\n// Prepare message for device\nmsg.payload = compactCmd;\nmsg._session = device.sessionId;\nmsg.targetDevice = deviceUUID;\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 480,
+        "y": 2580,
+        "wires": [
+            [
+                "vibrator_command_debug",
+                "vibrator_link_out"
+            ]
+        ]
+    },
+    {
+        "id": "vibrator_command_debug",
+        "type": "debug",
+        "z": "badef27c232a01ee",
+        "g": "a8bab09a4e76bc62",
+        "name": "Vibrator Command",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 780,
+        "y": 2580,
+        "wires": []
+    },
+    {
+        "id": "vibrator_link_out",
+        "type": "link out",
+        "z": "badef27c232a01ee",
+        "g": "a8bab09a4e76bc62",
+        "name": "link out 3",
+        "mode": "link",
+        "links": [
+            "52e0d8d8b9d385fe"
+        ],
+        "x": 635,
+        "y": 2620,
+        "wires": []
+    },
+    {
+        "id": "display_number_inject",
+        "type": "inject",
+        "z": "badef27c232a01ee",
+        "g": "a8bab09a4e76bc62",
+        "name": "Display 1234",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "displayCmd",
+                "v": "{\"n\":1234}",
+                "vt": "json"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "Display Number",
+        "payloadType": "str",
+        "x": 170,
+        "y": 2690,
+        "wires": [
+            [
+                "display_command_formatter"
+            ]
+        ]
+    },
+    {
+        "id": "display_time_inject",
+        "type": "inject",
+        "z": "badef27c232a01ee",
+        "g": "a8bab09a4e76bc62",
+        "name": "Display 12:30",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "displayCmd",
+                "v": "{\"t\":[12,30]}",
+                "vt": "json"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "Display Time",
+        "payloadType": "str",
+        "x": 170,
+        "y": 2730,
+        "wires": [
+            [
+                "display_command_formatter"
+            ]
+        ]
+    },
+    {
+        "id": "display_text_inject",
+        "type": "inject",
+        "z": "badef27c232a01ee",
+        "g": "a8bab09a4e76bc62",
+        "name": "Display CAFE",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "displayCmd",
+                "v": "{\"s\":\"CAFE\"}",
+                "vt": "json"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "Display Text",
+        "payloadType": "str",
+        "x": 170,
+        "y": 2770,
+        "wires": [
+            [
+                "display_command_formatter"
+            ]
+        ]
+    },
+    {
+        "id": "display_clear_inject",
+        "type": "inject",
+        "z": "badef27c232a01ee",
+        "g": "a8bab09a4e76bc62",
+        "name": "Display Clear",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "displayCmd",
+                "v": "{\"c\":1}",
+                "vt": "json"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "Display Clear",
+        "payloadType": "str",
+        "x": 170,
+        "y": 2810,
+        "wires": [
+            [
+                "display_command_formatter"
+            ]
+        ]
+    },
+    {
+        "id": "display_command_formatter",
+        "type": "function",
+        "z": "badef27c232a01ee",
+        "g": "a8bab09a4e76bc62",
+        "name": "Display Command Formatter",
+        "func": "// Format 4-Digit Display command for ESP32\n// Uses JSON format for complex actuators\n\nconst displayCmd = msg.displayCmd;\n\n// Get all devices from flow context\nconst devices = flow.get('devices') || {};\nconst deviceList = Object.keys(devices);\n\nif (deviceList.length === 0) {\n    node.error('No devices registered - cannot send Display command', msg);\n    node.status({fill: 'red', shape: 'ring', text: 'No devices'});\n    return null;\n}\n\n// Get the first device\nconst deviceUUID = deviceList[0];\nconst device = devices[deviceUUID];\n\nnode.log(`Sending Display command to ${device.deviceName} (${deviceUUID.substring(0,8)}...)`);\n\n// Display uses JSON format (complex actuator)\nconst jsonCmd = JSON.stringify({a: 'display', v: displayCmd});\nnode.log(`  JSON: ${jsonCmd}`);\n\n// Describe what we're showing\nlet description = 'unknown';\nif (displayCmd.n !== undefined) description = `number ${displayCmd.n}`;\nelse if (displayCmd.t) description = `time ${displayCmd.t[0]}:${displayCmd.t[1]}`;\nelse if (displayCmd.s) description = `text \"${displayCmd.s}\"`;\nelse if (displayCmd.c) description = 'clear';\nelse if (displayCmd.b !== undefined) description = `brightness ${displayCmd.b}`;\n\nnode.status({\n    fill: 'blue',\n    shape: 'dot',\n    text: `${description} → ${device.deviceName}`\n});\n\n// Prepare message for device\nmsg.payload = jsonCmd;\nmsg._session = device.sessionId;\nmsg.targetDevice = deviceUUID;\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 490,
+        "y": 2750,
+        "wires": [
+            [
+                "display_command_debug",
+                "display_link_out"
+            ]
+        ]
+    },
+    {
+        "id": "display_command_debug",
+        "type": "debug",
+        "z": "badef27c232a01ee",
+        "g": "a8bab09a4e76bc62",
+        "name": "Display Command",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 780,
+        "y": 2750,
+        "wires": []
+    },
+    {
+        "id": "display_link_out",
+        "type": "link out",
+        "z": "badef27c232a01ee",
+        "g": "a8bab09a4e76bc62",
+        "name": "link out 4",
+        "mode": "link",
+        "links": [
+            "52e0d8d8b9d385fe"
+        ],
+        "x": 635,
+        "y": 2790,
+        "wires": []
+    },
+    {
+        "id": "ledbar_level5_inject",
+        "type": "inject",
+        "z": "badef27c232a01ee",
+        "g": "a8bab09a4e76bc62",
+        "name": "LED Bar Level 5",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "ledbarCmd",
+                "v": "{\"l\":5}",
+                "vt": "json"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "Level 5",
+        "payloadType": "str",
+        "x": 170,
+        "y": 2880,
+        "wires": [
+            [
+                "ledbar_command_formatter"
+            ]
+        ]
+    },
+    {
+        "id": "ledbar_level10_inject",
+        "type": "inject",
+        "z": "badef27c232a01ee",
+        "g": "a8bab09a4e76bc62",
+        "name": "LED Bar Level 10",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "ledbarCmd",
+                "v": "{\"l\":10}",
+                "vt": "json"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "Level 10",
+        "payloadType": "str",
+        "x": 180,
+        "y": 2920,
+        "wires": [
+            [
+                "ledbar_command_formatter"
+            ]
+        ]
+    },
+    {
+        "id": "ledbar_allon_inject",
+        "type": "inject",
+        "z": "badef27c232a01ee",
+        "g": "a8bab09a4e76bc62",
+        "name": "LED Bar All ON",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "ledbarCmd",
+                "v": "{\"a\":1}",
+                "vt": "json"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "All ON",
+        "payloadType": "str",
+        "x": 170,
+        "y": 2960,
+        "wires": [
+            [
+                "ledbar_command_formatter"
+            ]
+        ]
+    },
+    {
+        "id": "ledbar_alloff_inject",
+        "type": "inject",
+        "z": "badef27c232a01ee",
+        "g": "a8bab09a4e76bc62",
+        "name": "LED Bar All OFF",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "ledbarCmd",
+                "v": "{\"a\":0}",
+                "vt": "json"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "All OFF",
+        "payloadType": "str",
+        "x": 170,
+        "y": 3000,
+        "wires": [
+            [
+                "ledbar_command_formatter"
+            ]
+        ]
+    },
+    {
+        "id": "ledbar_command_formatter",
+        "type": "function",
+        "z": "badef27c232a01ee",
+        "g": "a8bab09a4e76bc62",
+        "name": "LED Bar Command Formatter",
+        "func": "// Format LED Bar command for ESP32\nconst devices = flow.get('devices') || {};\nlet targetDevice = null;\n\n// Find the LED Bar device\nfor (const [uuid, device] of Object.entries(devices)) {\n    if (device.actuators && device.actuators.some(a => a.name === 'ledbar')) {\n        targetDevice = { uuid, ...device };\n        break;\n    }\n}\n\nif (!targetDevice) {\n    node.warn('No LED Bar device found');\n    return null;\n}\n\n// Format actuator command (JSON for complex actuator)\nmsg.payload = JSON.stringify({\n    a: 'ledbar',\n    v: msg.ledbarCmd\n});\nmsg._session = { type: 'websocket', id: targetDevice.socketId };\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 490,
+        "y": 2940,
+        "wires": [
+            [
+                "ledbar_command_debug",
+                "ledbar_link_out"
+            ]
+        ]
+    },
+    {
+        "id": "ledbar_command_debug",
+        "type": "debug",
+        "z": "badef27c232a01ee",
+        "g": "a8bab09a4e76bc62",
+        "name": "LED Bar Command",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 780,
+        "y": 2940,
+        "wires": []
+    },
+    {
+        "id": "ledbar_link_out",
+        "type": "link out",
+        "z": "badef27c232a01ee",
+        "g": "a8bab09a4e76bc62",
+        "name": "link out 5",
+        "mode": "link",
+        "links": [
+            "52e0d8d8b9d385fe"
+        ],
+        "x": 635,
+        "y": 2980,
+        "wires": []
+    },
+    {
+        "id": "rgbstick_red_inject",
+        "type": "inject",
+        "z": "badef27c232a01ee",
+        "g": "a8bab09a4e76bc62",
+        "name": "RGB Stick Red",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "rgbstickCmd",
+                "v": "{\"c\":{\"r\":255,\"g\":0,\"b\":0}}",
+                "vt": "json"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "Red",
+        "payloadType": "str",
+        "x": 170,
+        "y": 3070,
+        "wires": [
+            [
+                "rgbstick_command_formatter"
+            ]
+        ]
+    },
+    {
+        "id": "rgbstick_green_inject",
+        "type": "inject",
+        "z": "badef27c232a01ee",
+        "g": "a8bab09a4e76bc62",
+        "name": "RGB Stick Green",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "rgbstickCmd",
+                "v": "{\"c\":{\"r\":0,\"g\":255,\"b\":0}}",
+                "vt": "json"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "Green",
+        "payloadType": "str",
+        "x": 180,
+        "y": 3110,
+        "wires": [
+            [
+                "rgbstick_command_formatter"
+            ]
+        ]
+    },
+    {
+        "id": "rgbstick_rainbow_inject",
+        "type": "inject",
+        "z": "badef27c232a01ee",
+        "g": "a8bab09a4e76bc62",
+        "name": "RGB Stick Rainbow",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "rgbstickCmd",
+                "v": "{\"r\":1}",
+                "vt": "json"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "Rainbow",
+        "payloadType": "str",
+        "x": 180,
+        "y": 3150,
+        "wires": [
+            [
+                "rgbstick_command_formatter"
+            ]
+        ]
+    },
+    {
+        "id": "rgbstick_off_inject",
+        "type": "inject",
+        "z": "badef27c232a01ee",
+        "g": "a8bab09a4e76bc62",
+        "name": "RGB Stick Off",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "rgbstickCmd",
+                "v": "{\"o\":1}",
+                "vt": "json"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "Off",
+        "payloadType": "str",
+        "x": 160,
+        "y": 3190,
+        "wires": [
+            [
+                "rgbstick_command_formatter"
+            ]
+        ]
+    },
+    {
+        "id": "rgbstick_command_formatter",
+        "type": "function",
+        "z": "badef27c232a01ee",
+        "g": "a8bab09a4e76bc62",
+        "name": "RGB Stick Command Formatter",
+        "func": "// Format RGB Stick command for ESP32\nconst devices = flow.get('devices') || {};\nlet targetDevice = null;\n\n// Find the RGB Stick device\nfor (const [uuid, device] of Object.entries(devices)) {\n    if (device.actuators && device.actuators.some(a => a.name === 'rgbstick')) {\n        targetDevice = { uuid, ...device };\n        break;\n    }\n}\n\nif (!targetDevice) {\n    node.warn('No RGB Stick device found');\n    return null;\n}\n\n// Format actuator command (JSON for complex actuator)\nmsg.payload = JSON.stringify({\n    a: 'rgbstick',\n    v: msg.rgbstickCmd\n});\nmsg._session = { type: 'websocket', id: targetDevice.socketId };\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 500,
+        "y": 3130,
+        "wires": [
+            [
+                "rgbstick_command_debug",
+                "rgbstick_link_out"
+            ]
+        ]
+    },
+    {
+        "id": "rgbstick_command_debug",
+        "type": "debug",
+        "z": "badef27c232a01ee",
+        "g": "a8bab09a4e76bc62",
+        "name": "RGB Stick Command",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 790,
+        "y": 3130,
+        "wires": []
+    },
+    {
+        "id": "rgbstick_link_out",
+        "type": "link out",
+        "z": "badef27c232a01ee",
+        "g": "a8bab09a4e76bc62",
+        "name": "link out 6",
+        "mode": "link",
+        "links": [
+            "52e0d8d8b9d385fe"
+        ],
+        "x": 645,
+        "y": 3170,
+        "wires": []
+    },
+    {
+        "id": "677b49c05e163cf0",
+        "type": "comment",
+        "z": "badef27c232a01ee",
+        "name": "Debugging tools",
+        "info": "",
+        "x": 120,
+        "y": 2100,
+        "wires": []
+    },
+    {
+        "id": "0b518c741ca9c65a",
+        "type": "debug",
+        "z": "badef27c232a01ee",
+        "name": "To Device Debug",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 1750,
+        "y": 200,
+        "wires": []
+    },
+    {
+        "id": "webhook_prep",
+        "type": "function",
+        "z": "badef27c232a01ee",
+        "name": "Webhook Payload Prep",
+        "func": "// Transform compact sensor data to backend webhook payload.\n// Input: msg.payload = {d, s, v, t}, msg.deviceUUID = full UUID\n// Output: msg.payload = {device, sensor, value, timestamp}\n\nconst sensorData = msg.payload;\nconst deviceUUID = msg.deviceUUID;\n\nif (!sensorData || !deviceUUID) {\n    node.warn(\"[WEBHOOK] Missing sensor data or device UUID\");\n    return null;\n}\n\nmsg.payload = {\n    device: deviceUUID,\n    sensor: sensorData.s,\n    value: sensorData.v,\n    timestamp: sensorData.t || Date.now()\n};\n\nmsg.headers = { \"Content-Type\": \"application/json\" };\n\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1790,
+        "y": 400,
+        "wires": [
+            [
+                "webhook_http_post"
+            ]
+        ]
+    },
+    {
+        "id": "webhook_http_post",
+        "type": "http request",
+        "z": "badef27c232a01ee",
+        "name": "POST to Backend Webhook",
+        "method": "POST",
+        "ret": "obj",
+        "paytoqs": "ignore",
+        "url": "http://127.0.0.1:2026/api/webhook/sensor-data",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": true,
+        "headers": [],
+        "x": 2060,
+        "y": 400,
+        "wires": [
+            [
+                "webhook_response_debug"
+            ]
+        ]
+    },
+    {
+        "id": "webhook_response_debug",
+        "type": "debug",
+        "z": "badef27c232a01ee",
+        "name": "Webhook Response",
+        "active": false,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 2340,
+        "y": 400,
+        "wires": []
+    },
+    {
+        "id": "backend_cmd_http_in",
+        "type": "http in",
+        "z": "badef27c232a01ee",
+        "name": "Backend Device Command",
+        "url": "/device-command",
+        "method": "post",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 520,
+        "y": 1300,
+        "wires": [
+            [
+                "backend_cmd_handler"
+            ]
+        ]
+    },
+    {
+        "id": "backend_cmd_handler",
+        "type": "function",
+        "z": "badef27c232a01ee",
+        "name": "Backend Command Handler",
+        "func": "// Handle backend-triggered actuator commands\n// Validates payload, looks up device, routes to actuator_command_router\n\nconst body = msg.payload;\nconst { deviceUUID, actuator, value } = body || {};\n\nif (!deviceUUID || !actuator || value === undefined) {\n    msg.payload = { error: 'deviceUUID, actuator, and value are required' };\n    msg.statusCode = 400;\n    return [null, null, msg];\n}\n\nconst devices = flow.get('devices') || {};\nconst device = devices[deviceUUID];\n\nif (!device) {\n    msg.payload = { error: 'Device not found or not connected' };\n    msg.statusCode = 404;\n    return [null, null, msg];\n}\n\n// Command message for actuator_command_router (new object, no HTTP context needed)\nconst cmdMsg = {\n    deviceUUID: deviceUUID,\n    parsedMessage: { actuator, value }\n};\n\n// HTTP success response (reuse original msg which carries req/res from HTTP-in)\nmsg.payload = { sent: true, device: deviceUUID, actuator, value };\nmsg.statusCode = 200;\n\nnode.status({ fill: 'green', shape: 'dot', text: `${actuator} → ${device.deviceName}` });\nreturn [cmdMsg, msg, null];",
+        "outputs": 3,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 820,
+        "y": 1300,
+        "wires": [
+            [
+                "actuator_command_router"
+            ],
+            [
+                "backend_cmd_response_ok"
+            ],
+            [
+                "backend_cmd_response_err"
+            ]
+        ]
+    },
+    {
+        "id": "backend_cmd_response_ok",
+        "type": "http response",
+        "z": "badef27c232a01ee",
+        "name": "Command OK (200)",
+        "statusCode": "",
+        "headers": {},
+        "x": 1100,
+        "y": 1260,
+        "wires": []
+    },
+    {
+        "id": "backend_cmd_response_err",
+        "type": "http response",
+        "z": "badef27c232a01ee",
+        "name": "Command Error",
+        "statusCode": "",
+        "headers": {},
+        "x": 1100,
+        "y": 1340,
+        "wires": []
+    },
+    {
+        "id": "device_http_register_in",
+        "type": "http in",
+        "z": "badef27c232a01ee",
+        "name": "Device HTTP Register",
+        "url": "/device/register",
+        "method": "post",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 520,
+        "y": 1500,
+        "wires": [
+            [
+                "device_http_register_handler",
+                "d5d274718d19db1f"
+            ]
+        ]
+    },
+    {
+        "id": "device_http_register_handler",
+        "type": "function",
+        "z": "badef27c232a01ee",
+        "name": "HTTP Register Handler",
+        "func": "// Handle device registration via HTTP POST\n// Validates body, stores device in flow context, forwards to backend webhook\n\nconst body = msg.payload;\nconst uuid = body.device;\nconst deviceName = body.device_name;\n\nif (!uuid || !deviceName) {\n    msg.payload = { error: 'device (UUID) and device_name are required' };\n    msg.statusCode = 400;\n    return [null, null, msg];\n}\n\n// Actuator type to code mapping (same as device_registration_handler)\nconst actuatorTypeToCode = {\n    'led': 'L', 'pwm_led': 'P', 'servo': 'S', 'dc_motor': 'M',\n    'rgb_led': 'R', 'buzzer': 'B', 'relay': 'E', 'stepper': 'T',\n    'fan': 'F', 'valve': 'V', 'heater': 'H', 'tone_buzzer': 'Z',\n    'pwm': 'W', 'dac': 'D', 'mp3_player': 'X'\n};\n\n// Sensor type to code mapping\nconst sensorTypeToCode = {\n    'analog': 'A', 'slider': 'S', 'potentiometer': 'S',\n    'temperature': 'T', 'humidity': 'H', 'light': 'L', 'lux': 'L',\n    'pressure': 'P', 'distance': 'D', 'ultrasonic': 'D',\n    'button': 'B', 'digital': 'B', 'motion': 'M', 'pir': 'M',\n    'imu': 'I', 'imu_6dof': 'I', 'imu_9dof': 'I', 'imu_10dof': 'I',\n    'quaternion': 'Q', 'sound': 'N', 'gas': 'G',\n    'voltage': 'V', 'current': 'C', 'mp3_status': 'X'\n};\n\n// Build code maps\nconst actuatorCodeMap = {};\n(body.actuators || []).forEach(a => {\n    const code = actuatorTypeToCode[a.type];\n    if (code) actuatorCodeMap[a.name] = { code, type: a.type, dataType: a.data_type };\n});\n\nconst sensorCodeMap = {};\n(body.sensors || []).forEach(s => {\n    const code = sensorTypeToCode[s.type];\n    if (code) sensorCodeMap[s.name] = { code, type: s.type, dataType: s.data_type };\n});\n\n// Store device in flow context (sessionId = 'http' indicates no WS session)\nconst devices = flow.get('devices') || {};\nconst existing = devices[uuid];\n\nif (existing) {\n    // Preserve WS sessionId if device is also connected via WS\n    existing.deviceName = deviceName;\n    existing.deviceType = body.device_type || 'ESP32';\n    existing.sensors = body.sensors || [];\n    existing.actuators = body.actuators || [];\n    existing.actuatorCodeMap = actuatorCodeMap;\n    existing.sensorCodeMap = sensorCodeMap;\n    existing.lastSeen = new Date().toISOString();\n    if (!existing.sessionId || existing.sessionId === 'http') {\n        existing.sessionId = 'http';\n    }\n} else {\n    devices[uuid] = {\n        sessionId: 'http',\n        deviceName: deviceName,\n        deviceType: body.device_type || 'ESP32',\n        sensors: body.sensors || [],\n        actuators: body.actuators || [],\n        actuatorCodeMap: actuatorCodeMap,\n        sensorCodeMap: sensorCodeMap,\n        status: 'acknowledged',\n        lastHeartbeat: Date.now(),\n        registrationTime: new Date().toISOString(),\n        lastSeen: new Date().toISOString()\n    };\n}\n\nflow.set('devices', devices);\nnode.log(`[HTTP REG] Device ${uuid.substring(0,8)} registered: ${deviceName}`);\nnode.status({ fill: 'green', shape: 'dot', text: `Registered: ${deviceName}` });\n\n// Output 1: Webhook forward to backend\nconst webhookMsg = {\n    payload: {\n        uuid: uuid,\n        name: deviceName,\n        type: body.device_type || 'ESP32',\n        sensors: body.sensors || [],\n        actuators: body.actuators || []\n    },\n    headers: { 'Content-Type': 'application/json' }\n};\n\n// Output 2: Success response (reuse msg for HTTP response context)\nmsg.payload = {\n    type: 'registration_ack',\n    status: 'accepted',\n    device: uuid\n};\nmsg.statusCode = 200;\n\nreturn [webhookMsg, msg, null];",
+        "outputs": 3,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 820,
+        "y": 1500,
+        "wires": [
+            [
+                "device_reg_webhook_post"
+            ],
+            [
+                "device_http_register_ok"
+            ],
+            [
+                "device_http_register_err"
+            ]
+        ]
+    },
+    {
+        "id": "device_reg_webhook_post",
+        "type": "http request",
+        "z": "badef27c232a01ee",
+        "name": "POST to Backend (device-register)",
+        "method": "POST",
+        "ret": "obj",
+        "paytoqs": "ignore",
+        "url": "http://127.0.0.1:2026/api/webhook/device-register",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": true,
+        "headers": [],
+        "x": 1160,
+        "y": 1460,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "device_http_register_ok",
+        "type": "http response",
+        "z": "badef27c232a01ee",
+        "name": "Register OK (200)",
+        "statusCode": "",
+        "headers": {},
+        "x": 1120,
+        "y": 1500,
+        "wires": []
+    },
+    {
+        "id": "device_http_register_err",
+        "type": "http response",
+        "z": "badef27c232a01ee",
+        "name": "Register Error",
+        "statusCode": "",
+        "headers": {},
+        "x": 1120,
+        "y": 1540,
+        "wires": []
+    },
+    {
+        "id": "device_http_data_in",
+        "type": "http in",
+        "z": "badef27c232a01ee",
+        "name": "Device HTTP Data",
+        "url": "/device/data",
+        "method": "post",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 520,
+        "y": 1680,
+        "wires": [
+            [
+                "device_http_data_prep"
+            ]
+        ]
+    },
+    {
+        "id": "device_http_data_prep",
+        "type": "function",
+        "z": "badef27c232a01ee",
+        "name": "HTTP Data Prep",
+        "func": "// Validate HTTP data POST body and prepare verify request\nconst body = msg.payload;\n\nif (!body.device || !body.readings || !Array.isArray(body.readings) || body.readings.length === 0) {\n    msg.payload = { error: 'device (UUID) and readings[] are required' };\n    msg.statusCode = 400;\n    return [null, msg];\n}\n\n// Save original body for later processing\nmsg.deviceData = body;\n// Set up URL for verify request (method is set on the http-request node)\nmsg.url = 'http://127.0.0.1:2026/api/webhook/verify-device/' + encodeURIComponent(body.device);\nmsg.headers = {};\nmsg.payload = '';\n\nreturn [msg, null];",
+        "outputs": 2,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 760,
+        "y": 1680,
+        "wires": [
+            [
+                "device_http_verify_req"
+            ],
+            [
+                "device_http_data_err"
+            ]
+        ]
+    },
+    {
+        "id": "device_http_verify_req",
+        "type": "http request",
+        "z": "badef27c232a01ee",
+        "name": "GET verify-device",
+        "method": "GET",
+        "ret": "obj",
+        "paytoqs": "ignore",
+        "url": "",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": true,
+        "headers": [],
+        "x": 980,
+        "y": 1660,
+        "wires": [
+            [
+                "device_http_data_process"
+            ]
+        ]
+    },
+    {
+        "id": "device_http_data_process",
+        "type": "function",
+        "z": "badef27c232a01ee",
+        "name": "HTTP Data Process",
+        "func": "// Process verified device data — broadcast to WS subscribers + webhook\nconst verifyResult = msg.payload;\nconst deviceData = msg.deviceData;\n\nif (!verifyResult || !verifyResult.claimed) {\n    msg.payload = { error: 'Device not claimed. Register and claim it first.' };\n    msg.statusCode = 403;\n    return [null, null, msg];\n}\n\nconst uuid = deviceData.device;\n\n// Send each reading into the standard sensor data pipeline\nfor (const r of deviceData.readings) {\n    const sensorMsg = {\n        payload: {\n            d: uuid.substring(0, 8),\n            s: r.sensor,\n            v: r.value,\n            t: r.timestamp || Date.now()\n        },\n        deviceUUID: uuid,\n        isPWABroadcast: true\n    };\n    node.send([sensorMsg, null, null]);\n}\n\n// Success response (reuse original msg for HTTP response context)\nmsg.payload = { stored: true, count: deviceData.readings.length };\nmsg.statusCode = 200;\n\nnode.status({ fill: 'green', shape: 'dot', text: `${deviceData.readings.length} readings from ${uuid.substring(0,8)}` });\nreturn [null, msg, null];",
+        "outputs": 3,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1200,
+        "y": 1660,
+        "wires": [
+            [
+                "0d9a5670b805cfa8",
+                "5efcc72e8bc2e2cb"
+            ],
+            [
+                "device_http_data_ok"
+            ],
+            [
+                "device_http_data_err"
+            ]
+        ]
+    },
+    {
+        "id": "device_http_data_ok",
+        "type": "http response",
+        "z": "badef27c232a01ee",
+        "name": "Data OK (200)",
+        "statusCode": "",
+        "headers": {},
+        "x": 1440,
+        "y": 1660,
+        "wires": []
+    },
+    {
+        "id": "device_http_data_err",
+        "type": "http response",
+        "z": "badef27c232a01ee",
+        "name": "Data Error",
+        "statusCode": "",
+        "headers": {},
+        "x": 1440,
+        "y": 1720,
+        "wires": []
+    },
+    {
+        "id": "fb7a7207aa56d9a4",
+        "type": "link in",
+        "z": "badef27c232a01ee",
+        "name": "POST to backend",
+        "links": ["b3d1a07b4792c087"],
+        "x": 915,
+        "y": 1420,
+        "wires": [
+            [
+                "device_reg_webhook_post"
+            ]
+        ]
+    },
+    {
+        "id": "b3d1a07b4792c087",
+        "type": "link out",
+        "z": "badef27c232a01ee",
+        "name": "WS Reg → Backend Webhook",
+        "mode": "link",
+        "links": ["fb7a7207aa56d9a4"],
+        "x": 1295,
+        "y": 300,
+        "wires": []
+    },
+    {
+        "id": "d5d274718d19db1f",
+        "type": "debug",
+        "z": "badef27c232a01ee",
+        "name": "Device Register",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 760,
+        "y": 1440,
+        "wires": []
+    },
+    {
+        "id": "1a1cab99b945a925",
+        "type": "link in",
+        "z": "badef27c232a01ee",
+        "name": "POST sensor data to backend",
+        "links": [
+            "0d9a5670b805cfa8"
+        ],
+        "x": 1615,
+        "y": 380,
+        "wires": [
+            [
+                "webhook_prep"
+            ]
+        ]
+    },
+    {
+        "id": "0d9a5670b805cfa8",
+        "type": "link out",
+        "z": "badef27c232a01ee",
+        "name": "link out 8",
+        "mode": "link",
+        "links": [
+            "1a1cab99b945a925"
+        ],
+        "x": 1395,
+        "y": 1560,
+        "wires": []
+    },
+    {
+        "id": "775be098893c41bc",
+        "type": "link in",
+        "z": "badef27c232a01ee",
+        "name": "To PWA broadcasting",
+        "links": [
+            "5efcc72e8bc2e2cb"
+        ],
+        "x": 1595,
+        "y": 480,
+        "wires": [
+            [
+                "sensor_data_broadcaster"
+            ]
+        ]
+    },
+    {
+        "id": "5efcc72e8bc2e2cb",
+        "type": "link out",
+        "z": "badef27c232a01ee",
+        "name": "link out 9",
+        "mode": "link",
+        "links": [
+            "775be098893c41bc"
+        ],
+        "x": 1405,
+        "y": 1600,
+        "wires": []
+    },
+    {
+        "id": "device_websocket_listener",
+        "type": "websocket-listener",
+        "path": "/ws/device",
+        "wholemsg": "false"
+    },
+    {
+        "id": "pwa_websocket_listener",
+        "type": "websocket-listener",
+        "path": "/ws/app",
+        "wholemsg": "false"
+    }
+]
