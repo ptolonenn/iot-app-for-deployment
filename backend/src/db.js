@@ -1,7 +1,28 @@
 const Database = require('better-sqlite3');
 const path = require('path');
+const fs = require('fs');
 
-const db = new Database(path.join(__dirname, 'app.sqlite'));
+// Determine where to store the database 
+
+let dbPath;
+
+if (process.env.RAILWAY_VOLUME_MOUNT_PATH) {
+    // On railway, use the presistent volume 
+    const volumePath = proess.env.RAILWAY_VOLUME_MOUNT_PATH
+    if (!fs.existsSync(volumePath)) {
+
+        fs.mkdirSync(volumePath, { recursive: true });
+    }
+    dbPath = path.join(volumePath, 'ap.sqlite');
+    console.log(`Using Railway volume at: ${dbPath}`);
+} else {
+    // local development
+    dbPath = path.join(__dirname, 'app.sqlite');
+    console.log(`Using local database at: ${dbPath}`);
+}
+
+
+const db = new Database(dbPath);
 
 // users table
 db.exec(`
