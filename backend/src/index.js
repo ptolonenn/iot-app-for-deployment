@@ -3,7 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const db = require('./db');
 const path = require('path');
-const fs = require('fs');  // Add this line
+const fs = require('fs');
 
 const authRoutes = require('./routes/auth');
 const todoRoutes = require('./routes/todos');
@@ -29,16 +29,11 @@ app.get('/api/health', (req, res) => {
 // Serve frontend in production
 if (process.env.NODE_ENV === 'production') {
     const frontendPath = path.join(__dirname, '../../frontend/dist');
-    // Check if frontend exists
-    if (fs.existsSync(frontendPath)) {
-        app.use(express.static(frontendPath));
-        app.get('*', (req, res) => {
-            res.sendFile(path.join(frontendPath, 'index.html'));
-        });
-        console.log(`Serving frontend from: ${frontendPath}`);
-    } else {
-        console.log(`Frontend not found at: ${frontendPath}`);
-    }
+    app.use(express.static(frontendPath));
+    app.get('*', (req, res) => {
+        res.sendFile(path.join(frontendPath, 'index.html'));
+    });
+    console.log(`Serving frontend from: ${frontendPath}`);
 }
 
 app.listen(PORT, () => {
