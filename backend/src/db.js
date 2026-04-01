@@ -3,24 +3,21 @@ const path = require('path');
 const fs = require('fs');
 
 // Determine where to store the database 
-
 let dbPath;
 
 if (process.env.RAILWAY_VOLUME_MOUNT_PATH) {
-    // On railway, use the presistent volume 
-    const volumePath = proess.env.RAILWAY_VOLUME_MOUNT_PATH
+    // On railway, use the persistent volume 
+    const volumePath = process.env.RAILWAY_VOLUME_MOUNT_PATH;  // Fixed: proess -> process
     if (!fs.existsSync(volumePath)) {
-
         fs.mkdirSync(volumePath, { recursive: true });
     }
-    dbPath = path.join(volumePath, 'ap.sqlite');
+    dbPath = path.join(volumePath, 'app.sqlite');  // Fixed: ap.sqlite -> app.sqlite
     console.log(`Using Railway volume at: ${dbPath}`);
 } else {
     // local development
     dbPath = path.join(__dirname, 'app.sqlite');
     console.log(`Using local database at: ${dbPath}`);
 }
-
 
 const db = new Database(dbPath);
 

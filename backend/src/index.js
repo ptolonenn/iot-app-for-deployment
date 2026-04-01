@@ -1,8 +1,9 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const db = require('./db'); // to ensure that tables are created
+const db = require('./db');
 const path = require('path');
+const fs = require('fs');  // Add this line
 
 const authRoutes = require('./routes/auth');
 const todoRoutes = require('./routes/todos');
@@ -11,8 +12,8 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors({
-    origin: '*', // frontend - deploying, so no more localhost
-    credentials: true, // allow cookies if needed
+    origin: '*',
+    credentials: true,
 }));
 app.use(express.json());
 
@@ -27,17 +28,20 @@ app.get('/api/health', (req, res) => {
 
 // Serve frontend in production
 if (process.env.NODE_ENV === 'production') {
-    const frontendPath = path.join(__dirname, '../../frontend/dist'); // will this work? idk 
-    app.use(express.static(frontendPath));
-    app.get('*', (req, res) => {
-        res.sendFile(path.join(frontendPath, 'index.html'));
-
-    });
-    console.log(`Serving frontend from: ${frontendPath}`);
+    const frontendPath = path.join(__dirname, '../../frontend/dist');
+    // Check if frontend exists
+    if (fs.existsSync(frontendPath)) {
+        app.use(express.static(frontendPath));
+        app.get('*', (req, res) => {
+            res.sendFile(path.join(frontendPath, 'index.html'));
+        });
+        console.log(`Serving frontend from: ${frontendPath}`);
+    } else {
+        console.log(`Frontend not found at: ${frontendPath}`);
+    }
 }
 
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
     console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
-
 });
