@@ -33,7 +33,7 @@ if (process.env.NODE_ENV === 'production') {
         res.sendFile(path.join(frontendPath, 'index.html'));
 
     });
-    console.log(`Serving frontend from: ${frontendPath`);
+    console.log(`Serving frontend from: ${frontendPath}`);
 }
 
 app.listen(PORT, () => {
