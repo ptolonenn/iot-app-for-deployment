@@ -1,12 +1,14 @@
-#!bin/bash
-# Install backend dependencies
+#!/bin/bash
+echo "Starting build process..."
+
+echo "Installing backend dependencies..."
 cd backend
-npm Install
+npm install
 npm rebuild better-sqlite3
 
-# Install and build frontend
+echo "Installing frontend dependencies and building..."
 cd ../frontend
-npm Install
+npm install
 npm run build
 
-echo "Build complete"
+echo "Build complete!"
