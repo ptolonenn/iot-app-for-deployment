@@ -30,7 +30,13 @@ app.get('/api/health', (req, res) => {
 if (process.env.NODE_ENV === 'production') {
     const frontendPath = path.join(__dirname, '../../frontend/dist');
     app.use(express.static(frontendPath));
-    app.get('*', (req, res) => {
+    // Change from app.get('*') to app.use() for better compatibility
+    app.use((req, res, next) => {
+        // If it's an API route, skip
+        if (req.path.startsWith('/api')) {
+            return next();
+        }
+        // Otherwise serve the frontend
         res.sendFile(path.join(frontendPath, 'index.html'));
     });
     console.log(`Serving frontend from: ${frontendPath}`);
