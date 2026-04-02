@@ -12,28 +12,24 @@ router.post('/register', (req, res) => {
         return res.status(400).json({ error: "Username and password required!" });
     }
 
-    db.get('SELECT id FROM users WHERE username = ?', [username], (err, existing) => {
-        if (err) {
-            console.error(err);
-            return res.status(500).json({ error: "Server error" });
-        }
-        
+    try {
+        // Check if user exists already
+        const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
         if (existing) {
             return res.status(400).json({ error: "Username already taken" });
         }
 
         const hashed = hashPassword(password);
-        db.run('INSERT INTO users (username, password) VALUES (?, ?)', [username, hashed], function(err) {
-            if (err) {
-                console.error(err);
-                return res.status(500).json({ error: "Server error" });
-            }
-            
-            const user = { id: this.lastID, username };
-            const token = generateToken(user);
-            res.status(200).json({ user, token });
-        });
-    });
+        const result = db.prepare('INSERT INTO users (username, password) VALUES (?, ?)').run(username, hashed);
+
+        const user = { id: result.lastInsertRowid, username };
+        const token = generateToken(user);
+
+        res.status(200).json({ user, token });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Server error" });
+    }
 });
 
 // Login
@@ -44,11 +40,8 @@ router.post('/login', (req, res) => {
         return res.status(400).json({ error: "Username and password required!" });
     }
 
-    db.get('SELECT * FROM users WHERE username = ?', [username], (err, user) => {
-        if (err) {
-            console.error(err);
-            return res.status(500).json({ error: "Server error" });
-        }
+    try {
+        const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
         
         if (!user || !comparePassword(password, user.password)) {
             return res.status(401).json({ error: "Invalid credentials" });
@@ -56,27 +49,30 @@ router.post('/login', (req, res) => {
 
         const token = generateToken({ id: user.id, username: user.username });
         res.json({ user: { id: user.id, username: user.username }, token });
-    });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Server error" });
+    }
 });
 
 // Get current user
 router.get('/me', authenticateToken, (req, res) => {
-    db.get('SELECT id, username FROM users WHERE id = ?', [req.user.id], (err, user) => {
-        if (err) {
-            console.error(err);
-            return res.status(500).json({ error: "Server error" });
-        }
+    try {
+        const user = db.prepare('SELECT id, username FROM users WHERE id = ?').get(req.user.id);
         
         if (!user) {
             return res.status(404).json({ error: "User not found" });
         }
         
         res.json(user);
-    });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Server error" });
+    }
 });
 
 // Change password
-router.put('/change-password', authenticateToken, async (req, res) => {
+router.put('/change-password', authenticateToken, (req, res) => {
     const { currentPassword, newPassword } = req.body;
     const userId = req.user.id;
 
@@ -88,12 +84,9 @@ router.put('/change-password', authenticateToken, async (req, res) => {
         return res.status(400).json({ error: "New password must be at least 6 characters" });
     }
 
-    db.get('SELECT * FROM users WHERE id = ?', [userId], (err, user) => {
-        if (err) {
-            console.error(err);
-            return res.status(500).json({ error: "Server error" });
-        }
-        
+    try {
+        const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+
         if (!user) {
             return res.status(404).json({ error: "User not found" });
         }
@@ -105,15 +98,13 @@ router.put('/change-password', authenticateToken, async (req, res) => {
         }
 
         const hashedPassword = hashPassword(newPassword);
-        db.run('UPDATE users SET password = ? WHERE id = ?', [hashedPassword, userId], function(err) {
-            if (err) {
-                console.error(err);
-                return res.status(500).json({ error: "Server error" });
-            }
-            
-            res.json({ message: "Password changed successfully" });
-        });
-    });
+        db.prepare('UPDATE users SET password = ? WHERE id = ?').run(hashedPassword, userId);
+        
+        res.json({ message: "Password changed successfully" });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Server error" });
+    }
 });
 
 // Delete account
@@ -125,12 +116,9 @@ router.delete('/delete-account', authenticateToken, (req, res) => {
         return res.status(400).json({ error: "Password is required to delete account" });
     }
 
-    db.get('SELECT * FROM users WHERE id = ?', [userId], (err, user) => {
-        if (err) {
-            console.error(err);
-            return res.status(500).json({ error: "Server error" });
-        }
-        
+    try {
+        const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+
         if (!user) {
             return res.status(404).json({ error: "User not found" });
         }
@@ -142,23 +130,16 @@ router.delete('/delete-account', authenticateToken, (req, res) => {
         }
 
         // Delete user's todos
-        db.run('DELETE FROM todos WHERE user_id = ?', [userId], (err) => {
-            if (err) {
-                console.error(err);
-                return res.status(500).json({ error: "Server error" });
-            }
-            
-            // Delete user
-            db.run('DELETE FROM users WHERE id = ?', [userId], (err) => {
-                if (err) {
-                    console.error(err);
-                    return res.status(500).json({ error: "Server error" });
-                }
-                
-                res.json({ message: "Account deleted successfully" });
-            });
-        });
-    });
+        db.prepare('DELETE FROM todos WHERE user_id = ?').run(userId);
+        
+        // Delete user
+        db.prepare('DELETE FROM users WHERE id = ?').run(userId);
+        
+        res.json({ message: "Account deleted successfully" });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Server error" });
+    }
 });
 
 module.exports = router;
