@@ -4,12 +4,17 @@ const API_URL = import.meta.env.VITE_API_URL;
 
 async function fetchWithAuth(endpoint, option = {}) {
     const token = getAuthToken();
+    // debugging headers
+    console.log('Fetching token...');
     const headers = {
         'Content-type': 'application/json',
         ...option.headers,
     };
     if (token) {
         headers['Authorization'] = `Bearer ${token}`;
+    }
+    else {
+        console.log('Token not found');
     }
 
     const res = await fetch(`${API_URL}${endpoint}`, {
