@@ -35,20 +35,6 @@ export async function getTodos() {
     return fetchWithAuth('/todos');
 }
 
-/*
-export async function addTodo(task, duration = null, dueDate = null) {
-    console.log('Adding todo with task;', task, 'duration:', defaultExternalConditions, 'due_date:', dueDate);
-    return fetchWithAuth('/todos', {
-        method: 'POST',
-        body: JSON.stringify({
-            task,
-            duration,
-            due_date: dueDate
-        }),
-    });
-}
-*/
-// Debugging addTodo task
 export async function addTodo(task, duration = null, dueDate = null) {
     console.log('AddTodo task starting...');
     console.log('Sending to backend:', { task, duration, dueDate });

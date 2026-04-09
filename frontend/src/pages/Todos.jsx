@@ -1,53 +1,10 @@
 // frontend/src/pages/Todos.jsx
 import React, { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, UNSAFE_DataRouterStateContext } from 'react-router-dom';
 import { getTodos, addTodo, deleteTodo, toggleTodo } from '../lib/todos';
 import { isAuthenticated, removeAuthToken } from '../lib/auth';
 import { getTodoColor, getTimeRemainingText } from '../utils/todoUtils'; // Import from utils
 import './Todos.css';
-
-// Some helper 
-
-/* All this already imported from todoUTils
-const getTodoColor = (todo) => {
-  if (todo.completed === 1) return '#808080';
-
-  if (!todo.due_date) return '#ffffff'; // white for no deadline
-
-  const now = new Date();
-  const due = new Date(todo.due_date);
-  const timeLeft = due - now;
-  const hoursLeft = timeLeft / (1000 * 60 * 60);
-
-
-
-  // Colors just based off timeLeft, can be done differently, i.e based off % of total time??
-
-  if (timeLeft < 0) return '#ff142c'; // red for overdue
-  if (hoursLeft < 1) return 'hsl(19, 100%, 56%)'; // red orange
-  if (hoursLeft < 3) return '#ff8e37'; // orange
-  if (hoursLeft < 6) return '#ffd037';
-  if (hoursLeft < 24) return '#d4ff37';
-  return '#6aff00';
-}
-
-const getTimeRemainingText = (dueDate) => {
-  if (!dueDate) return '';
-
-  const now = new Date();
-  const due = new Date(dueDate);
-  const diffMs = due - now;
-  const diffMins = Math.round(diffMs / 60000);
-  const diffHours = Math.round(diffMs / 3600000);
-  const diffDays = Math.round(diffMs / 86400000);
-
-  if (diffMs < 0) return 'Overdue!';
-  if (diffMins < 60) return `${diffMins} min left`;
-  if (diffHours < 24) return `${diffHours} hours left`;
-  return `${diffDays} day${diffDays > 1 ? 's': ''} left`;
-}
-
-*/
 
 export default function Todos() {
   const [todos, setTodos] = useState([]);
@@ -85,6 +42,10 @@ export default function Todos() {
     try {
       setLoading(true);
       const data = await getTodos();
+      if (!data) {
+        setError('No todos found');
+        return;
+      }
       setTodos(data);
     } catch (err) {
       setError('Failed to load todos');
@@ -169,7 +130,7 @@ export default function Todos() {
     <div className="todos-wrapper">
       <div className="todos-container">
         <div className="todos-header">
-          <h1>My Todos</h1>
+          <h1>My Tasks</h1>
           <button onClick={handleLogout} className="logout-btn">Logout</button>
         </div>
 
