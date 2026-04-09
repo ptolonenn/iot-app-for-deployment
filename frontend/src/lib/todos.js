@@ -26,11 +26,12 @@ async function fetchWithAuth(endpoint, option = {}) {
         const error = await res.json().catch(() => ({}));
         throw new Error(error.error || 'Request failed');
     }
-    console.log('FetchWithAuth func')
+    console.log('FetchWithAuth function called');
     return res.json();
 }
 
 export async function getTodos() {
+    console.log('Getting todos...');
     return fetchWithAuth('/todos');
 }
 
