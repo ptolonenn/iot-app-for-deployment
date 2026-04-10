@@ -1,6 +1,6 @@
 import { getAuthToken } from "./auth";
 
-const API_URL = import.meta.env.VITE_API_URL;
+const API_URL = import.meta.env.PROD ? '/api' : 'http://localhost:3000/api';
 
 async function fetchWithAuth(endpoint, option = {}) {
     const token = getAuthToken();
