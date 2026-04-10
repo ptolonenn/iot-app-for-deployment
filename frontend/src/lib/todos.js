@@ -12,6 +12,7 @@ async function fetchWithAuth(endpoint, option = {}) {
     };
     if (token) {
         headers['Authorization'] = `Bearer ${token}`;
+        console.log('Token:', token);
     }
     else {
         console.log('Token not found');
@@ -27,6 +28,7 @@ async function fetchWithAuth(endpoint, option = {}) {
         throw new Error(error.error || 'Request failed');
     }
     console.log('FetchWithAuth function called');
+    console.log('Response:', res);
     return res.json();
 }
 
