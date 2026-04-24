@@ -134,6 +134,16 @@
     margin-bottom: 2rem;
 }
 
+.password-section {
+    margin-top: 0;
+}
+
+.password-section input,
+.delete-confirm input {
+    background: #ffffff;
+    color: #2d3748;
+}
+
 .warning-text {
     color: #dc3545;
     font-size: 0.9rem;
@@ -162,7 +172,7 @@
 }
 
 .past-tasks-section {
-    margin-top: 2rem;
+    margin: 2rem 0 3rem;
     padding: 1.5rem;
     border-radius: 16px;
     background: #f8f9ff;
