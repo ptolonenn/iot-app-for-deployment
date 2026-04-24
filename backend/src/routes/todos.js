@@ -24,7 +24,7 @@ router.get('/', (req, res) => {
 // create todo, fixed bug: now it saves duration and due date
 router.post('/', (req, res) => {
     const userId = req.user?.id;
-    const { task, duration = null, due_date = null } = req.body;
+    const { task, duration, due_date } = req.body;
 
     if (!userId) {
         return res.status(401).json({ error: "No user ID" });
@@ -32,6 +32,14 @@ router.post('/', (req, res) => {
 
     if (!task) {
         return res.status(400).json({ error: "Task is required" });
+    }
+
+    if (!duration) {
+        return res.status(400).json({ error: "Duration is required" });
+    }
+
+    if (!due_date) {
+        return res.status(400).json({ error: "Due date is required" });
     }
 
     try {

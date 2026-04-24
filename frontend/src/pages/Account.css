@@ -160,3 +160,55 @@
     gap: 0.5rem;
     margin-top: 0.5rem;
 }
+
+.past-tasks-section {
+    margin-top: 2rem;
+    padding: 1.5rem;
+    border-radius: 16px;
+    background: #f8f9ff;
+    border: 1px solid #e3e6f0;
+}
+
+.past-tasks-section h2 {
+    margin-top: 0;
+    color: #333;
+}
+
+.past-tasks-list {
+    list-style: none;
+    padding: 0;
+    margin: 1rem 0 0 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.past-task-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.9rem 1rem;
+    border-radius: 12px;
+    background: white;
+    border: 1px solid #e0e0e0;
+    color: #333;
+}
+
+.past-task-item strong {
+    color: #2c3e50;
+}
+
+.past-task-date {
+    margin: 0.25rem 0 0 0;
+    font-size: 0.9rem;
+    color: #666;
+}
+
+.past-task-duration {
+    background: #eef2ff;
+    color: #4f46e5;
+    padding: 0.35rem 0.65rem;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    font-weight: 600;
+}

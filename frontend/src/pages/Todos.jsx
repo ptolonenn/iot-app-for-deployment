@@ -10,17 +10,19 @@ export default function Todos() {
   const [todos, setTodos] = useState([]);
   const [newTask, setNewTask] = useState('');
   const [duration, setDuration] = useState('');
-  const [customDueDate, setCustomDueDate] = useState('');
-  const [useCustomDate, setUseCustomDate] = useState(false);
+  const [dueDate, setDueDate] = useState('');
+  const [dueTime, setDueTime] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const navigate = useNavigate();
+  const timeOptions = [];
 
-
-  if (!isAuthenticated()) {
-    return <div className="redirect-message">Redirecting to login...</div>;
+  for (let hour = 0; hour < 24; hour++) {
+    for (let minute of ['00', '30']) {
+      const time = `${String(hour).padStart(2, '0')}:${minute}`;
+      timeOptions.push(time);
+    }
   }
-
 
   useEffect(() => {
     if (!isAuthenticated()) {
@@ -29,13 +31,13 @@ export default function Todos() {
     }
     loadTodos();
     
-    // Refresh todo colors every minute
+    // Refresh todo colors every minute without resetting the todo
     const interval = setInterval(() => {
-      setTodos([...todos]); // Force re-render to update colors
+      setTodos(currentTodos => [...currentTodos]);
     }, 60000);
     
     return () => clearInterval(interval);
-  }, []);
+  }, [navigate]);
 
 
   async function loadTodos() {
@@ -57,42 +59,48 @@ export default function Todos() {
 
   async function handleAddTodo(e) {
     e.preventDefault();
-    if (!newTask.trim()) return;
 
-    // adding debugging
-    console.log('Adding todo:', { newTask, duration, useCustomDate, customDueDate });
-    
+    if (!newTask.trim()) {
+      setError('Please enter a task name.');
+      return;
+    }
+
+    if (!duration) {
+      setError('Please select a duration.');
+      return;
+    }
+
+    if (!dueDate) {
+      setError('Please select a due date.');
+      return;
+    }
+
+    if (!dueTime) {
+      setError('Please select a due time.');
+      return;
+    }
+
     try {
-      let dueDate = null;
-      if (useCustomDate && customDueDate) {
-        dueDate = new Date(customDueDate).toISOString();
-        console.log('Using custom due date:', dueDate);
-      } else if (duration) {
-        console.log('Using duration:', duration, 'minutes');
-      }
-
+      const finalDueDate = new Date(`${dueDate}T${dueTime}`).toISOString();
 
       const newTodo = await addTodo(
-        newTask, 
-        useCustomDate ? null : (duration ? parseInt(duration) : null),
-        dueDate
+        newTask.trim(),
+        parseInt(duration),
+        finalDueDate
       );
 
-      console.log('Todo added successfully:', newTodo);
-
-      // check if newTodo is the todo object or if its wrapped
       const todoToAdd = newTodo.newTodo || newTodo;
-      setTodos([todoToAdd, ...todos]);
-      
-      //  reset form
+
+      setTodos(currentTodos => [todoToAdd, ...currentTodos]);
+
       setNewTask('');
       setDuration('');
-      setCustomDueDate('');
-      setUseCustomDate(false);
+      setDueDate('');
+      setDueTime('');
       setError('');
     } catch (err) {
       console.error('Failed to add todo:', err);
-      setError('Failed to add todo ' + err.message);
+      setError(err.message || 'Failed to add todo');
     }
   }
 
@@ -122,6 +130,9 @@ export default function Todos() {
     navigate('/login');
   }
 
+  const activeTodos = todos.filter(todo => todo.completed !== 1);
+  const completedTodos = todos.filter(todo => todo.completed === 1);
+
 
   if (loading) return <div className="loading-message">Loading...</div>;
 
@@ -142,23 +153,20 @@ export default function Todos() {
             onChange={(e) => setNewTask(e.target.value)}
             placeholder="Add a new task..."
             className="todo-input"
+            required
           />
-          
+
           <div className="time-options">
-            <label className="radio-label">
-              <input
-                type="radio"
-                checked={!useCustomDate}
-                onChange={() => setUseCustomDate(false)}
-              />
+            <label className="field-label">
               <span>Duration:</span>
               <select 
                 value={duration} 
                 onChange={(e) => setDuration(e.target.value)}
-                disabled={useCustomDate}
                 className="duration-select"
+                required
               >
-                <option value="">No deadline</option>
+                <option value="">Select duration</option>
+                <option value="15">15 minutes</option>
                 <option value="30">30 minutes</option>
                 <option value="60">1 hour</option>
                 <option value="120">2 hours</option>
@@ -170,25 +178,35 @@ export default function Todos() {
               </select>
             </label>
 
-
-            <label className="radio-label">
+            <label className="field-label">
+              <span>Due date:</span>
               <input
-                type="radio"
-                checked={useCustomDate}
-                onChange={() => setUseCustomDate(true)}
-              />
-              <span>Due Date:</span>
-              <input
-                type="datetime-local"
-                value={customDueDate}
-                onChange={(e) => setCustomDueDate(e.target.value)}
-                disabled={!useCustomDate}
+                type="date"
+                value={dueDate}
+                onChange={(e) => setDueDate(e.target.value)}
                 className="date-input"
+                required
               />
             </label>
+
+            <label className="field-label">
+              <span>Due time:</span>
+              <select
+                value={dueTime}
+                onChange={(e) => setDueTime(e.target.value)}
+                className="date-input"
+                required
+              >
+                <option value="">Select time</option>
+                {timeOptions.map(time => (
+                  <option key={time} value={time}>
+                    {time}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
-
-
+          
           <button type="submit" className="add-btn">Add Todo</button>
         </form>
 
@@ -196,8 +214,14 @@ export default function Todos() {
         {error && <p className="error-text">{error}</p>}
 
 
+        <h2 className="section-title">Active Tasks</h2>
+
         <ul className="todo-list">
-          {todos.map(todo => (
+          {activeTodos.length === 0 && (
+            <p className="empty-text">No active tasks yet.</p>
+          )}
+
+          {activeTodos.map(todo => (
             <li 
               key={todo.id} 
               className="todo-item"
@@ -210,24 +234,65 @@ export default function Todos() {
                 className="todo-checkbox"
                 onClick={(e) => e.stopPropagation()}
               />
+
               <Link to={`/todos/${todo.id}`} className="todo-link"> 
                 <div className="todo-content">
-                  <span className={`todo-text ${todo.completed === 1 ? 'completed' : ''}`}>
+                  <span className="todo-text">
                     {todo.task}
                   </span>
-                  {todo.due_date && !todo.completed && (
+                  {todo.due_date && (
                     <span className="time-remaining">
                       {getTimeRemainingText(todo.due_date)}
                     </span>
                   )}
                 </div>
               </Link>
+
               <button onClick={(e) => {
                 e.preventDefault();
-                handleDelete(todo.id)
+                handleDelete(todo.id);
               }}
               className="delete-btn">
-              Delete
+                Delete
+              </button>
+            </li>
+          ))}
+        </ul>
+
+        <h2 className="section-title">Completed Tasks</h2>
+
+        <ul className="todo-list completed-list">
+          {completedTodos.length === 0 && (
+            <p className="empty-text">No completed tasks yet.</p>
+          )}
+
+          {completedTodos.map(todo => (
+            <li 
+              key={todo.id} 
+              className="todo-item completed-item"
+            >
+              <input
+                type="checkbox"
+                checked={todo.completed === 1}
+                onChange={() => handleToggle(todo)}
+                className="todo-checkbox"
+                onClick={(e) => e.stopPropagation()}
+              />
+
+              <Link to={`/todos/${todo.id}`} className="todo-link"> 
+                <div className="todo-content">
+                  <span className="todo-text completed">
+                    {todo.task}
+                  </span>
+                </div>
+              </Link>
+
+              <button onClick={(e) => {
+                e.preventDefault();
+                handleDelete(todo.id);
+              }}
+              className="delete-btn">
+                Delete
               </button>
             </li>
           ))}
