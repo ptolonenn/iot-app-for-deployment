@@ -1,6 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getCurrentUser, changePassword, deleteAccount, removeAuthToken } from '../lib/auth';
+
+import { getTodos } from '../lib/todos';
+
+import { formatEuropeanDate } from '../utils/todoUtils';
+
 import './Account.css'; // TODO: this
 
 function Account() {
@@ -15,6 +20,7 @@ function Account() {
     const [deletePassword, setDeletePassword] = useState('');
     const [message, setMessage] = useState({ text: '', type: '' });
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [completedTodos, setCompletedTodos] = useState([]);
 
     useEffect(() => {
         const token = localStorage.getItem('token');
@@ -23,6 +29,7 @@ function Account() {
             return;
         }
         loadUser();
+        loadCompletedTodos();
     }, [navigate]);
 
     const loadUser = async () => {
@@ -38,6 +45,18 @@ function Account() {
             setLoading(false);
         }
     };
+
+    const loadCompletedTodos = async () => {
+
+    try {
+        const todos = await getTodos();
+        const completed = todos.filter(todo => todo.completed === 1);
+        setCompletedTodos(completed);
+
+    } catch (error) {
+        console.error('Error loading completed todos:', error);
+    }
+};
 
     const handlePasswordChange = async (e) => {
         e.preventDefault();
@@ -96,10 +115,40 @@ function Account() {
                     <div className={`message ${message.type}`}>
                         {message.text}
                     </div>
-                )}
+                    )}
 
+                <div className="past-tasks-section">
+                    <h2>Past Tasks</h2>
+
+                    {completedTodos.length === 0 ? (
+                        <p className="info-note">You do not have any completed tasks yet.</p>
+                    ) : (
+                        <ul className="past-tasks-list">
+                            {completedTodos.map(todo => (
+                                <li key={todo.id} className="past-task-item">
+                                    <div>
+                                        <strong>{todo.task}</strong>
+                                        {todo.due_date && (
+                                            <p className="past-task-date">
+                                                Due: {formatEuropeanDate(todo.due_date)}
+                                            </p>
+                                        )}
+                                    </div>
+
+                                    {todo.duration && (
+                                        <span className="past-task-duration">
+                                            {todo.duration} min
+                                        </span>
+                                    )}
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                </div>
+                                        
                 <div className="password-section">
                     <h2>Change Password</h2>
+
                     <form onSubmit={handlePasswordChange}>
                         <div className="form-group">
                             <label>Current Password:</label>
@@ -125,14 +174,15 @@ function Account() {
                                 required
                             />
                         </div>
+
                         <div className="form-group">
                             <label>Confirm New Password:</label>
                             <input
                                 type="password"
-                                value={passwordData.confirmPassword}
+                                value={passwordData.confirmNewPassword}
                                 onChange={(e) => setPasswordData({ 
                                     ...passwordData, 
-                                    confirmPassword: e.target.value 
+                                    confirmNewPassword: e.target.value 
                                 })}
                                 required
                             />
