@@ -4,7 +4,8 @@ Personal notes:
 cd backend && node src/index.js 
 cd frontend npm run dev
 
-
+Link to the app:
+https://iot-app-for-deployment-production.up.railway.app/
 
 TODO LIST:
 
