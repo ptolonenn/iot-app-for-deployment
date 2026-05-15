@@ -96,6 +96,49 @@ export function useHourglassWebSocket() {
     setTimeout(() => sendLedCommand(false), 200);
   }, [sendLedCommand]);
 
+  // Send timer command to ESP32 (START_SAND, STOP_SAND, RESET)
+  const sendTimerCommand = useCallback((command, durationMinutes = null) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      console.warn('WebSocket not connected');
+      return false;
+    }
+
+    if (!subscribedDevice) {
+      console.warn('No device subscribed');
+      return false;
+    }
+
+    const payload = {
+      type: "actuator_cmd",
+      actuator: "hourglass",
+      command: command,
+      device: subscribedDevice,
+      timestamp: Date.now()
+    };
+
+    // Add duration for START_SAND command
+    if (command === 'START_SAND' && durationMinutes !== null) {
+      payload.duration_minutes = durationMinutes;
+    }
+
+    wsRef.current.send(JSON.stringify(payload));
+    console.log(`Timer command sent: ${command}${durationMinutes ? ` (${durationMinutes}m)` : ''}`);
+    return true;
+  }, [subscribedDevice]);
+
+  // Convenience methods for timer commands
+  const startSand = useCallback((durationMinutes) => {
+    return sendTimerCommand('START_SAND', durationMinutes);
+  }, [sendTimerCommand]);
+
+  const stopSand = useCallback(() => {
+    return sendTimerCommand('STOP_SAND');
+  }, [sendTimerCommand]);
+
+  const resetSand = useCallback(() => {
+    return sendTimerCommand('RESET');
+  }, [sendTimerCommand]);
+
   // Subscribe to a device
   const subscribeToDevice = useCallback((deviceId) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
@@ -286,6 +329,10 @@ export function useHourglassWebSocket() {
     fetchDevices,
     sendLedCommand,
     sendLedPulse,
+    sendTimerCommand,
+    startSand,
+    stopSand,
+    resetSand,
     connect,
     disconnect
   };

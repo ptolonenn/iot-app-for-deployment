@@ -1,0 +1,310 @@
+/* Debug Page Styles */
+.debug-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 2rem;
+  background: #f8f9fa;
+  min-height: 100vh;
+}
+
+.debug-header {
+  margin-bottom: 2rem;
+  text-align: center;
+}
+
+.debug-header h1 {
+  color: #2c3e50;
+  font-size: 2.5rem;
+  margin: 0 0 0.5rem 0;
+}
+
+.debug-subtitle {
+  color: #7f8c8d;
+  font-size: 1rem;
+  margin: 0;
+}
+
+.debug-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.debug-card {
+  background: white;
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border-left: 4px solid #667eea;
+}
+
+.debug-card h2 {
+  margin: 0 0 1rem 0;
+  font-size: 1.2rem;
+  color: #2c3e50;
+}
+
+/* Status Display */
+.debug-status {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  background: #f0f4ff;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+}
+
+.status-indicator {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.status-text {
+  font-weight: 600;
+  color: #2c3e50;
+  font-size: 1.1rem;
+}
+
+/* Position Display */
+.position-display {
+  display: flex;
+  justify-content: center;
+  margin: 1rem 0;
+}
+
+.position-indicator {
+  text-align: center;
+  padding: 2rem;
+  background: #f0f4ff;
+  border-radius: 12px;
+  width: 100%;
+}
+
+.position-emoji {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+}
+
+.position-text {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #2c3e50;
+}
+
+/* Sensor Data */
+.sensor-data {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e0e0e0;
+}
+
+.sensor-data h3 {
+  margin: 0 0 0.75rem 0;
+  font-size: 0.95rem;
+  color: #7f8c8d;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.sensor-axes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.axis {
+  padding: 0.5rem;
+  background: #f9f9f9;
+  border-radius: 6px;
+  font-family: monospace;
+  font-size: 0.9rem;
+  color: #2c3e50;
+}
+
+/* Debug Info */
+.debug-info {
+  padding: 1rem;
+  background: #f9f9f9;
+  border-radius: 8px;
+}
+
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid #ecf0f1;
+}
+
+.info-row:last-child {
+  border-bottom: none;
+}
+
+.info-label {
+  font-weight: 600;
+  color: #7f8c8d;
+  font-size: 0.9rem;
+}
+
+.info-value {
+  color: #2c3e50;
+  font-weight: 500;
+  font-family: monospace;
+}
+
+.info-value.small {
+  font-size: 0.85rem;
+}
+
+.info-value.mode-badge,
+.info-value.state-badge {
+  color: white;
+  padding: 0.3rem 0.75rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  font-family: sans-serif;
+}
+
+.overtime {
+  color: #e74c3c;
+}
+
+.overtime .info-value {
+  color: #e74c3c;
+  font-weight: 700;
+}
+
+/* Timer Card */
+.timer-card {
+  border-left-color: #f39c12;
+}
+
+.timer-big {
+  font-size: 3rem;
+  font-weight: bold;
+  font-family: monospace;
+  text-align: center;
+  color: #2c3e50;
+  margin: 1.5rem 0;
+  padding: 1rem;
+  background: #f0f4ff;
+  border-radius: 8px;
+}
+
+/* Devices List */
+.devices-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.device-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem;
+  background: #f9f9f9;
+  border-radius: 6px;
+  border-left: 3px solid #667eea;
+}
+
+.device-name {
+  font-weight: 500;
+  color: #2c3e50;
+}
+
+.device-uuid {
+  font-family: monospace;
+  font-size: 0.85rem;
+  color: #95a5a6;
+}
+
+.no-devices {
+  text-align: center;
+  padding: 1.5rem;
+  color: #95a5a6;
+}
+
+.refresh-btn {
+  margin-top: 1rem;
+  padding: 0.5rem 1rem;
+  background: #667eea;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.refresh-btn:hover {
+  background: #5a67d8;
+  transform: translateY(-2px);
+}
+
+/* Raw Data Section */
+.debug-raw {
+  background: white;
+  border-radius: 12px;
+  padding: 2rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border-left: 4px solid #e74c3c;
+}
+
+.debug-raw h2 {
+  margin: 0 0 1.5rem 0;
+  color: #2c3e50;
+}
+
+.json-display {
+  background: #2c3e50;
+  color: #ecf0f1;
+  padding: 1.5rem;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+
+.json-display pre {
+  margin: 0;
+  font-family: 'Courier New', monospace;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .debug-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .debug-header h1 {
+    font-size: 1.8rem;
+  }
+
+  .timer-big {
+    font-size: 2rem;
+  }
+
+  .position-emoji {
+    font-size: 3rem;
+  }
+
+  .debug-container {
+    padding: 1rem;
+  }
+}

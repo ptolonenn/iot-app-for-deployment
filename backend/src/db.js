@@ -55,5 +55,25 @@ if (!todoColumnNames.includes('due_date')) {
     console.log('Added missing column: due_date');
 }
 
+if (!todoColumnNames.includes('time_actual_duration')) {
+    db.exec(`ALTER TABLE todos ADD COLUMN time_actual_duration INTEGER`);
+    console.log('Added missing column: time_actual_duration');
+}
+
+if (!todoColumnNames.includes('time_completed_at')) {
+    db.exec(`ALTER TABLE todos ADD COLUMN time_completed_at DATETIME`);
+    console.log('Added missing column: time_completed_at');
+}
+
+if (!todoColumnNames.includes('notes')) {
+    db.exec(`ALTER TABLE todos ADD COLUMN notes TEXT`);
+    console.log('Added missing column: notes');
+}
+
+if (!todoColumnNames.includes('mode')) {
+    db.exec(`ALTER TABLE todos ADD COLUMN mode TEXT DEFAULT 'timer'`);
+    console.log('Added missing column: mode');
+}
+
 console.log('Database ready');
 module.exports = db;

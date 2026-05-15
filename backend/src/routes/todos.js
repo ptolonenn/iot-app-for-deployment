@@ -60,92 +60,148 @@ router.post('/', (req, res) => {
 
 /*
 
-// create a new todo 
-// create a new todo - SIMPLIFIED FOR DEBUGGING
-// create a new todo - ULTRA DEBUG VERSION
-router.post('/', (req, res) => {
-    console.log('========== POST /todos DEBUG ==========');
-    console.log('1. Headers:', req.headers);
-    console.log('2. User from token:', req.user);
-    console.log('3. Full request body:', req.body);
-    console.log('4. Body type:', typeof req.body);
-    console.log('5. Is body empty?', Object.keys(req.body).length === 0);
-    
+// update todo
+router.put('/:id', (req, res) => {
     const userId = req.user?.id;
-    console.log('6. User ID:', userId);
-    
+    const todoId = parseInt(req.params.id);
+    const { task, duration, due_date, completed, notes, mode, time_actual_duration, time_completed_at } = req.body;
+
     if (!userId) {
-        console.log('No user ID found');
         return res.status(401).json({ error: "No user ID" });
     }
 
-    const { task } = req.body;
-    console.log('7. Task value:', task);
-    console.log('8. Task type:', typeof task);
-    console.log('9. Task exists?', !!task);
-    
-    if (!task) {
-        console.log('No task in request body');
-        return res.status(400).json({ error: "Task is required" });
-    }
-
     try {
-        console.log('10. Attempting database insert...');
-        console.log('11. SQL: INSERT INTO todos (user_id, task) VALUES (?, ?)');
-        console.log('12. Values:', [userId, task]);
+        // First check if todo belongs to user
+        const todo = db.prepare(`SELECT * FROM todos WHERE id = ? AND user_id = ?`).get(todoId, userId);
         
-        // Check if database is connected
-        console.log('13. Database object exists?', !!db);
-        
-        // Test database with a simple query first
-        const testQuery = db.prepare('SELECT 1').get();
-        console.log('14. Database test query result:', testQuery);
-        
-        // Check if todos table exists
-        const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all();
-        console.log('15. All tables:', tables);
-        
-        // Check todos table schema
-        const tableInfo = db.prepare("PRAGMA table_info(todos)").all();
-        console.log('16. Todos table schema:', tableInfo);
-        
-        // Now do the actual insert
-        console.log('17. Preparing insert statement...');
-        const stmt = db.prepare(`
-            INSERT INTO todos (user_id, task) 
-            VALUES (?, ?)
-        `);
-        console.log('18. Statement prepared');
-        
-        console.log('19. Running insert...');
-        const result = stmt.run(userId, task);
-        console.log('20. Insert result:', result);
-        
-        console.log('21. Getting new todo...');
-        const newTodo = db.prepare(`SELECT * FROM todos WHERE id = ?`).get(result.lastInsertRowid);
-        console.log('22. New todo retrieved:', newTodo);
-        
-        console.log('✅ SUCCESS! Sending response');
-        res.status(201).json(newTodo);
-        
-    } catch (err) {
-        console.log('========== ERROR CAUGHT ==========');
-        console.log('Error name:', err.name);
-        console.log('Error message:', err.message);
-        console.log('Error code:', err.code);
-        console.log('Error errno:', err.errno);
-        console.log('Error stack:', err.stack);
-        console.log('===================================');
-        
-        // Try to get more database info
-        try {
-            const tableCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='todos'").get();
-            console.log('Todos table exists?', tableCheck);
-        } catch (e) {
-            console.log('Could not check table existence:', e.message);
+        if (!todo) {
+            return res.status(404).json({ error: "Todo not found" });
         }
+
+        // Build the update query dynamically based on provided fields
+        const updates = [];
+        const values = [];
+
+        if (task !== undefined) {
+            updates.push('task = ?');
+            values.push(task);
+        }
+        if (duration !== undefined) {
+            updates.push('duration = ?');
+            values.push(duration);
+        }
+        if (due_date !== undefined) {
+            updates.push('due_date = ?');
+            values.push(due_date);
+        }
+        if (completed !== undefined) {
+            updates.push('completed = ?');
+            values.push(completed ? 1 : 0);
+        }
+        if (notes !== undefined) {
+            updates.push('notes = ?');
+            values.push(notes);
+        }
+        if (mode !== undefined) {
+            updates.push('mode = ?');
+            values.push(mode);
+        }
+        if (time_actual_duration !== undefined) {
+            updates.push('time_actual_duration = ?');
+            values.push(time_actual_duration);
+        }
+        if (time_completed_at !== undefined) {
+            updates.push('time_completed_at = ?');
+            values.push(time_completed_at);
+        }
+
+        if (updates.length === 0) {
+            return res.status(400).json({ error: "No fields to update" });
+        }
+
+        values.push(todoId);
+        values.push(userId);
+
+        const sql = `UPDATE todos SET ${updates.join(', ')} WHERE id = ? AND user_id = ?`;
+        const stmt = db.prepare(sql);
+        stmt.run(...values);
+
+        // Get updated todo
+        const updatedTodo = db.prepare(`SELECT * FROM todos WHERE id = ? AND user_id = ?`).get(todoId, userId);
         
-        res.status(500).json({ error: err.message });
+        res.json(updatedTodo);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Failed to update todo" });
+    }
+});
+
+
+*/
+
+// update todo - handles all fields including notes, mode, analytics
+router.put('/:id', (req, res) => {
+    const userId = req.user.id;
+    const todoId = req.params.id;
+    const { task, completed, duration, due_date, notes, mode, time_actual_duration, time_completed_at } = req.body;  
+    try {
+        // verify ownership
+        const todo = db.prepare(`SELECT * FROM todos WHERE id = ? AND user_id = ?`).get(todoId, userId);
+        if (!todo) {
+            return res.status(404).json({ error: "Todo not found" });
+        }
+
+        let updateQuery = 'UPDATE todos SET ';
+        const updates = [];
+        const values = [];
+
+        if (task !== undefined) {
+            updates.push('task = ?');
+            values.push(task);
+        }
+        if (completed !== undefined) {
+            updates.push('completed = ?');
+            values.push(completed ? 1 : 0);
+        }
+        if (duration !== undefined) { 
+            updates.push('duration = ?');
+            values.push(duration);
+        }
+        if (due_date !== undefined) { 
+            updates.push('due_date = ?');
+            values.push(due_date);
+        }
+        if (notes !== undefined) {
+            updates.push('notes = ?');
+            values.push(notes);
+        }
+        if (mode !== undefined) {
+            updates.push('mode = ?');
+            values.push(mode);
+        }
+        if (time_actual_duration !== undefined) {
+            updates.push('time_actual_duration = ?');
+            values.push(time_actual_duration);
+        }
+        if (time_completed_at !== undefined) {
+            updates.push('time_completed_at = ?');
+            values.push(time_completed_at);
+        }
+
+        if (updates.length === 0) {
+            return res.status(400).json({ error: 'No updates provided' });
+        }
+
+        updateQuery += updates.join(', ') + ' WHERE id = ? AND user_id = ?';
+        values.push(todoId, userId);
+
+        db.prepare(updateQuery).run(...values);
+
+        const updatedTodo = db.prepare(`SELECT * FROM todos WHERE id = ?`).get(todoId);
+        res.json(updatedTodo);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Failed to update todo" });
     }
 });
 
@@ -217,6 +273,66 @@ router.delete('/:id', (req, res) => {
         console.error(err);
         res.status(500).json({ error: "Failed to delete todo" });
     }
-})
+});
+
+// Get analytics for completed todos (last N days)
+router.get('/analytics/summary', (req, res) => {
+    const userId = req.user.id;
+    const daysBack = parseInt(req.query.days) || 7;
+    
+    try {
+        const cutoffDate = new Date();
+        cutoffDate.setDate(cutoffDate.getDate() - daysBack);
+        const cutoffISO = cutoffDate.toISOString();
+
+        // Get all completed sessions in the period
+        const sessions = db.prepare(`
+            SELECT 
+                id,
+                task,
+                duration,
+                time_actual_duration,
+                time_completed_at,
+                mode,
+                notes
+            FROM todos
+            WHERE user_id = ? 
+            AND completed = 1
+            AND time_completed_at >= ?
+            ORDER BY time_completed_at DESC
+        `).all(userId, cutoffISO);
+
+        if (!sessions.length) {
+            return res.json({
+                totalSessions: 0,
+                totalMinutes: 0,
+                avgMinutes: 0,
+                modeBreakdown: {},
+                sessions: []
+            });
+        }
+
+        const totalMinutes = sessions.reduce((sum, s) => sum + (s.time_actual_duration || 0), 0);
+        const avgMinutes = Math.round(totalMinutes / sessions.length);
+
+        const modeBreakdown = sessions.reduce((acc, session) => {
+            const mode = session.mode || 'timer';
+            acc[mode] = (acc[mode] || 0) + 1;
+            return acc;
+        }, {});
+
+        res.json({
+            totalSessions: sessions.length,
+            totalMinutes,
+            avgMinutes,
+            modeBreakdown,
+            daysBack,
+            sessions
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Failed to fetch analytics" });
+    }
+});
 
 module.exports = router;

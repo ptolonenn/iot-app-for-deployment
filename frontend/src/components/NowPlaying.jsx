@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './NowPlaying.css';
+import { useTimerStateMachine } from '../hooks/useTimerStateMachine';
+import { useTimerAnalytics } from '../hooks/useTimerAnalytics';
+import NotesModal from './NotesModal';
 
 export default function NowPlaying({ 
   currentTask, 
@@ -8,11 +11,16 @@ export default function NowPlaying({
   refreshTasks,
   device
 }) {
-  const [status, setStatus] = useState('idle'); // idle, active, paused, completed
-  const [timeElapsed, setTimeElapsed] = useState(0);
-  const intervalRef = useRef(null);
+  // State machine for mode-based logic
+  const stateMachine = useTimerStateMachine();
+  
+  // Analytics engine for tracking and saving
+  const analytics = useTimerAnalytics();
+  
+  // UI state
+  const [showNotesModal, setShowNotesModal] = useState(false);
   const lastHandledPositionRef = useRef(null);
-  const completingRef = useRef(false)
+  const completingRef = useRef(false);
   
   const {
     connectionStatus,
@@ -21,27 +29,25 @@ export default function NowPlaying({
     subscribedDevice,
     subscribeToDevice,
     sendLedPulse,
-    fetchDevices
+    fetchDevices,
+    startSand,
+    stopSand,
+    resetSand
   } = device;
 
   // Reset timer when current task changes
   useEffect(() => {
-    setTimeElapsed(0);
-    setStatus('idle');
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
+    stateMachine.resetTimer();
   }, [currentTask?.id]);
 
-  // Cleanup interval on unmount
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      // No need to manually clean up intervals since state machine handles it
     };
   }, []);
 
-  // Listen to hardware position changes
+  // Handle device position changes with state machine
   useEffect(() => {
     if (!devicePosition) return;
 
@@ -54,73 +60,56 @@ export default function NowPlaying({
 
     console.log(`Hardware position changed to: ${devicePosition}`);
 
-    switch (devicePosition) {
-      case 'A':
-        if (status !== 'active' && currentTask) {
-          handlePlay();
-        }
-        break;
+    // Use state machine to handle the position
+    const action = stateMachine.handlePositionChange(devicePosition, currentTask?.duration);
+    
+    if (!action) return;
 
-      case 'B':
-        if (!completingRef.current && status !== 'completed' && currentTask) {
-          completingRef.current = true;
-          handleComplete().finally(() => {
-            completingRef.current = false;
-          });
-        }
-        break;
+    console.log('State machine action:', action);
 
-      case 'C':
-        if (status === 'active') {
-          handlePause();
-        }
-        break;
+    // Send LED pulse feedback
+    sendLedPulse();
 
-      default:
-        break;
+    // Update UI status
+    const statusMap = {
+      'action:start_timer': 'active',
+      'action:start_background_timer': 'active',
+      'action:resume_timer': 'active',
+      'action:resume_background_timer': 'active',
+      'action:pause_timer': 'paused',
+      'action:pause_background_timer': 'paused',
+      'action:complete_timer': 'completed',
+      'action:complete_with_overtime': 'completed'
+    };
+
+    const actionType = typeof action === 'string' ? action : action.action;
+    const newStatus = statusMap[actionType];
+    if (newStatus) {
+      onStatusChange?.(newStatus);
     }
-  }, [devicePosition]);
 
-  const startTimer = () => {
-    if (intervalRef.current) clearInterval(intervalRef.current);
-    intervalRef.current = setInterval(() => {
-      setTimeElapsed(prev => prev + 1);
-    }, 1000);
-  };
-
-  const pauseTimer = () => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
+    // If completion action, save to database
+    if (actionType === 'action:complete_timer' || actionType === 'action:complete_with_overtime') {
+      handleComplete();
     }
-  };
 
-  const handlePlay = () => {
-  if (!currentTask) return;
-  setStatus('active');
-  startTimer();
-  onStatusChange?.('active');
-  sendLedPulse();
-};
+  }, [devicePosition, stateMachine, currentTask?.duration]);
 
-  const handlePause = () => {
-  if (!currentTask) return;
-  setStatus('paused');
-  pauseTimer();
-  onStatusChange?.('paused');
-  sendLedPulse();
-};
+  // Send command to ESP32 when timer starts
+  useEffect(() => {
+    if (stateMachine.timerState === 'running' && subscribedDevice && currentTask?.duration) {
+      // Send START_SAND command with duration
+      const durationToSend = stateMachine.mode === 'timer' ? 25 : currentTask.duration;
+      startSand(durationToSend);
+    }
+  }, [stateMachine.timerState, subscribedDevice, currentTask, startSand, stateMachine.mode]);
 
-  const handleComplete = async () => {
-  if (!currentTask) return; // Safety check
-  
-  pauseTimer();
-  setStatus('completed');
-  await onComplete?.();
-  setTimeElapsed(0);
-  setStatus('idle');
-  sendLedPulse(); // Visual feedback
-};
+  // Send stop command when timer pauses
+  useEffect(() => {
+    if (stateMachine.timerState === 'paused' && subscribedDevice) {
+      stopSand();
+    }
+  }, [stateMachine.timerState, subscribedDevice, stopSand]);
 
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
@@ -129,8 +118,8 @@ export default function NowPlaying({
   };
 
   const getStatusIcon = () => {
-    switch(status) {
-      case 'active': return '▶';
+    switch(stateMachine.timerState) {
+      case 'running': return '▶';
       case 'paused': return '⏸';
       case 'completed': return '✓';
       default: return '⏹';
@@ -138,8 +127,8 @@ export default function NowPlaying({
   };
 
   const getStatusText = () => {
-    switch(status) {
-      case 'active': return 'Active';
+    switch(stateMachine.timerState) {
+      case 'running': return 'Active';
       case 'paused': return 'Paused';
       case 'completed': return 'Completed';
       default: return 'Not started';
@@ -152,6 +141,65 @@ export default function NowPlaying({
       case 'connecting': return '🟡';
       case 'error': return '🔴';
       default: return '⚫';
+    }
+  };
+
+  const handlePlay = () => {
+    if (!currentTask) return;
+    stateMachine.startTimer(currentTask.duration);
+    onStatusChange?.('active');
+    sendLedPulse();
+  };
+
+  const handlePause = () => {
+    if (!currentTask) return;
+    stateMachine.pauseTimer();
+    onStatusChange?.('paused');
+    sendLedPulse();
+  };
+
+  const handleResume = () => {
+    if (!currentTask) return;
+    stateMachine.resumeTimer();
+    onStatusChange?.('active');
+    sendLedPulse();
+  };
+
+  const handleComplete = async () => {
+    if (!currentTask || completingRef.current) return;
+    
+    completingRef.current = true;
+    try {
+      stateMachine.completeTimer();
+      
+      // Save to database
+      await analytics.saveSessionCompletion(
+        currentTask.id,
+        stateMachine.elapsedSeconds,
+        stateMachine.mode,
+        currentTask.notes || '',
+        { planDurationMinutes: stateMachine.planDurationMinutes }
+      );
+
+      // Call parent callback
+      await onComplete?.();
+      
+      // Reset for next task
+      stateMachine.resetTimer();
+      onStatusChange?.('completed');
+    } catch (err) {
+      console.error('Failed to complete task:', err);
+    } finally {
+      completingRef.current = false;
+    }
+  };
+
+  const handleSaveNotes = async (notes) => {
+    try {
+      await analytics.saveNotes(currentTask.id, notes);
+      setShowNotesModal(false);
+    } catch (err) {
+      console.error('Failed to save notes:', err);
     }
   };
 
@@ -217,6 +265,32 @@ export default function NowPlaying({
         </div>
       ) : (
         <>
+          {/* Mode Selector */}
+          <div className="mode-selector">
+            <label>Mode:</label>
+            <select 
+              value={stateMachine.mode} 
+              onChange={(e) => {
+                stateMachine.setMode(e.target.value);
+                lastHandledPositionRef.current = null;
+              }}
+            >
+              <option value="timer">Timer (25 min)</option>
+              <option value="focus">Focus (Custom)</option>
+            </select>
+            {stateMachine.mode === 'focus' && (
+              <input
+                type="number"
+                min="1"
+                max="120"
+                value={stateMachine.planDurationMinutes}
+                onChange={(e) => stateMachine.setPlanDurationMinutes(parseInt(e.target.value))}
+                className="duration-input"
+                title="Planned duration in minutes"
+              />
+            )}
+          </div>
+
           <div className="current-task">
             <h2>{currentTask.task}</h2>
             {currentTask.duration && (
@@ -227,48 +301,104 @@ export default function NowPlaying({
           <div className="timer-section">
             <div className="timer-display">
               <span className="timer-icon">{getStatusIcon()}</span>
-              <span className="timer-time">{formatTime(timeElapsed)}</span>
+              <span className="timer-time">{stateMachine.formatElapsedTime()}</span>
             </div>
+            {stateMachine.timerState === 'running' && (
+              <div className="timer-remaining">
+                Remaining: {stateMachine.formatRemainingTime(currentTask.duration)}
+              </div>
+            )}
+            {stateMachine.isOvertime(currentTask.duration) && (
+              <div className="timer-overtime">
+                ⏱️ Overtime: +{Math.floor(stateMachine.getOvertimeSeconds(currentTask.duration) / 60)}m
+              </div>
+            )}
             <div className="timer-status">{getStatusText()}</div>
+            {stateMachine.timerState === 'running' && (
+              <div className="progress-bar">
+                <div 
+                  className="progress-fill" 
+                  style={{ width: `${stateMachine.getProgressPercentage(currentTask.duration)}%` }}
+                />
+              </div>
+            )}
           </div>
 
           <div className="task-controls">
-            <button 
-              onClick={handlePlay} 
-              className="control-btn play"
-              disabled={status === 'active'}
+            {stateMachine.timerState === 'idle' || stateMachine.timerState === 'completed' ? (
+              <button 
+                onClick={handlePlay} 
+                className="control-btn play"
+              >
+                Start
+              </button>
+            ) : stateMachine.timerState === 'running' ? (
+              <>
+                <button 
+                  onClick={handlePause} 
+                  className="control-btn pause"
+                >
+                  Pause
+                </button>
+                <button 
+                  onClick={handleComplete} 
+                  className="control-btn complete"
+                >
+                  Complete
+                </button>
+              </>
+            ) : (
+              <>
+                <button 
+                  onClick={handleResume} 
+                  className="control-btn play"
+                >
+                  Resume
+                </button>
+                <button 
+                  onClick={handleComplete} 
+                  className="control-btn complete"
+                >
+                  Complete
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* Notes Button */}
+          <div className="task-actions">
+            <button
+              className="btn-notes"
+              onClick={() => setShowNotesModal(true)}
+              title="Add notes for this task"
             >
-              Play
-            </button>
-            <button 
-              onClick={handlePause} 
-              className="control-btn pause"
-              disabled={status !== 'active'}
-            >
-              Pause
-            </button>
-            <button 
-              onClick={handleComplete} 
-              className="control-btn complete"
-              disabled={status === 'completed'}
-            >
-              Complete
+              📝 {currentTask.notes ? 'Edit Notes' : 'Add Notes'}
             </button>
           </div>
           
           <div className="device-mapping">
-            <small>Device mapping: Play (A) | Pause (C) | Complete (B)</small>
+            <small>Device mapping: Start (A) | Pause (C) | Complete (B)</small>
           </div>
 
           {/* Show current position from hardware */}
           {devicePosition && (
             <div className="current-position">
               <small>Hardware position: {
-                devicePosition === 'A' ? 'Upright (Active)' :
+                devicePosition === 'A' ? 'Upright (Start)' :
                 devicePosition === 'B' ? 'Flipped (Complete)' :
                 'Horizontal (Pause)'
               }</small>
             </div>
+          )}
+
+          {/* Notes Modal */}
+          {showNotesModal && (
+            <NotesModal
+              todo={currentTask}
+              onClose={() => setShowNotesModal(false)}
+              onSave={handleSaveNotes}
+              isLoading={analytics.isLoading}
+            />
           )}
         </>
       )}

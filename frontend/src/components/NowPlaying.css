@@ -259,3 +259,122 @@
 .empty-hint {
   font-size: 0.8rem;
 }
+
+/* Mode Selector Styles */
+.mode-selector {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  background: #f0f4ff;
+  border-radius: 8px;
+  border: 1px solid #cbd5e0;
+}
+
+.mode-selector label {
+  font-weight: 600;
+  color: #2d3748;
+  font-size: 0.9rem;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.mode-selector select {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid #cbd5e0;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  background: white;
+  cursor: pointer;
+  flex: 1;
+}
+
+.duration-input {
+  width: 60px;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid #cbd5e0;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.duration-input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
+}
+
+/* Progress Bar */
+.progress-bar {
+  width: 100%;
+  height: 6px;
+  background: #e2e8f0;
+  border-radius: 3px;
+  margin-top: 0.75rem;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #48bb78, #38a169);
+  border-radius: 3px;
+  transition: width 0.1s linear;
+}
+
+/* Timer Remaining Time */
+.timer-remaining {
+  font-size: 0.85rem;
+  color: #4299e1;
+  margin-top: 0.5rem;
+  font-weight: 500;
+}
+
+/* Overtime Warning */
+.timer-overtime {
+  font-size: 0.85rem;
+  color: #ed8936;
+  margin-top: 0.5rem;
+  font-weight: 600;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+/* Task Actions (Notes button) */
+.task-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+  flex-wrap: wrap;
+}
+
+.btn-notes {
+  flex: 1;
+  min-width: 150px;
+  padding: 0.5rem 0.75rem;
+  background: #9f7aea;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.85rem;
+  transition: all 0.2s ease;
+}
+
+.btn-notes:hover {
+  background: #805ad5;
+  transform: translateY(-2px);
+}
+
+.btn-notes:active {
+  transform: translateY(0);
+}
